@@ -16,4 +16,4 @@ A2UI catalog, A2A agent backend, and STIRR component spec. Agent-generated UI fo
 
 - Python 3.13+, uv
 - `GEMINI_API_KEY` required
-- Tools: search_content (mock; VODLIX later)
+- Tools: search_content (VODLIX API: v2/search, v2/videos/list)

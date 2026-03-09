@@ -10,7 +10,7 @@ A2UI catalog, A2A agent backend, and STIRR component spec for agent-generated st
 stirr-a2ui/
 ├── agent/           # Python A2A agent (Gemini-powered)
 │   ├── stirr_content_agent.py
-│   ├── tools.py     # VODLIX/mock content search
+│   ├── tools.py     # VODLIX content search
 │   └── pyproject.toml
 ├── catalog/         # STIRR A2UI component catalog (v0.8)
 │   └── stirr_catalog.json
@@ -24,6 +24,7 @@ stirr-a2ui/
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/)
 - `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/apikey)
+- `VODLIX_API_BASE`, `VODLIX_USERNAME`, `VODLIX_PASSWORD` for content search (same as stirr-content-tools, stirr-search-feeds)
 
 ### Run the STIRR Content Agent
 
@@ -31,6 +32,9 @@ stirr-a2ui/
 cd agent
 uv sync
 export GEMINI_API_KEY="your-key"
+export VODLIX_API_BASE="https://stirr.com/api"
+export VODLIX_USERNAME="your-email"
+export VODLIX_PASSWORD="your-password"
 uv run python -m stirr_content_agent
 ```
 

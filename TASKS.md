@@ -3,7 +3,7 @@
 ## To Do
 
 - [ ] Wire agent to A2A server (a2a-sdk or custom)
-- [ ] Replace mock search_content with VODLIX API
+- [x] Replace mock search_content with VODLIX API
 - [ ] Add STIRR custom catalog components (ContentShelf, ConversationalSearch) to renderer
 - [ ] Run full demo with A2UI Lit client
 
