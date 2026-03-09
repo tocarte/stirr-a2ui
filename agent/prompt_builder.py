@@ -16,7 +16,10 @@ ROLE_DESCRIPTION = (
 UI_DESCRIPTION = """
 - If the user searches for content (e.g., "Find Hitchcock movies", "Classic films"), use the `search_content` tool to get results, then render a ContentShelf: a horizontal List of Cards. Each Card contains Image (poster) + Text (title, genre). Bind the list to `/shelf/items` from the tool response.
 - For ConversationalSearch: show a TextField for search input, then when results are returned, display them as a List of Cards (Image + Text per item).
-- Use the standard A2UI components: List, Card, Image, Text, TextField, Button.
+- For breaking news: use NewsAlertBanner (Card + Text + Icon). headline, summary, optional iconName.
+- For sports scores: use ScoreOverlay (Card + Row + Text). homeTeam, awayTeam, homeScore, awayScore, period.
+- For chapter navigation: use ChapterNav (List + Button per chapter). chapters array with title, timestamp, action for seek.
+- Use the standard A2UI components: List, Card, Image, Text, TextField, Button, Row, Icon.
 - Keep the UI minimal and focused on content discovery.
 """
 

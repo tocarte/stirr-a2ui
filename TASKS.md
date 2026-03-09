@@ -5,6 +5,7 @@
 - [ ] Wire agent to A2A server (a2a-sdk or custom)
 - [x] Replace mock search_content with VODLIX API
 - [ ] Add STIRR custom catalog components (ContentShelf, ConversationalSearch) to renderer
+- [x] P4-E. Expand catalog: ScoreOverlay, NewsAlertBanner, ChapterNav
 - [ ] Run full demo with A2UI Lit client
 
 ## Done

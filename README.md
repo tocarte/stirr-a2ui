@@ -44,10 +44,16 @@ The agent runs as an A2A server. Connect with the [A2UI Lit client](https://gith
 
 See `stirr-platform-nextgen/docs/A2UI_DEMO.md` for full setup.
 
-## Components (Phase 1)
+## Components
 
+**Phase 1 (implemented):**
 - **ConversationalSearch** — Search input → agent returns content results as `List` of `Card`s
 - **ContentShelf** — Horizontal shelf of content cards (`List` + `Card` + `Image` + `Text`)
+
+**Phase 2–3 (catalog defined):**
+- **NewsAlertBanner** — Breaking-news banner (`Card` + `Text` + `Icon`)
+- **ScoreOverlay** — Sports score display (`Card` + `Text` + `Row`)
+- **ChapterNav** — Chapter list for long-form content (`List` + `Button` + `Text`)
 
 ## Create GitHub Repo
 

@@ -15,6 +15,34 @@
       "properties": {
         "placeholder": { "type": "string", "description": "Search input placeholder" }
       }
+    },
+    "NewsAlertBanner": {
+      "description": "Breaking-news banner. Card + Text + optional Icon.",
+      "extends": ["Card"],
+      "properties": {
+        "headline": { "type": "string", "description": "Alert headline" },
+        "summary": { "type": "string", "description": "Brief summary" },
+        "iconName": { "type": "string", "description": "Optional icon (e.g. alert, info)" }
+      }
+    },
+    "ScoreOverlay": {
+      "description": "Score display overlay for sports. Card + Text + Row layout.",
+      "extends": ["Card"],
+      "properties": {
+        "homeTeam": { "type": "string", "description": "Home team name" },
+        "awayTeam": { "type": "string", "description": "Away team name" },
+        "homeScore": { "type": "integer", "description": "Home team score" },
+        "awayScore": { "type": "integer", "description": "Away team score" },
+        "period": { "type": "string", "description": "e.g. Q3, 2nd Half, Final" }
+      }
+    },
+    "ChapterNav": {
+      "description": "Chapter list for long-form content. List + Button per chapter, action for seek.",
+      "extends": ["List"],
+      "properties": {
+        "chapters": { "type": "array", "description": "Array of {title, timestamp, action}" },
+        "currentChapter": { "type": "string", "description": "ID of current chapter" }
+      }
     }
   }
 }
