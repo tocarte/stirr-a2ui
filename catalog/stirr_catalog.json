@@ -1,0 +1,20 @@
+{
+  "$schema": "https://a2ui.org/specification/v0_8/standard_catalog_definition.json",
+  "version": "v0.8",
+  "components": {
+    "ContentShelf": {
+      "description": "Horizontal shelf of content cards for STIRR",
+      "extends": ["List"],
+      "properties": {
+        "title": { "type": "string", "description": "Shelf title" }
+      }
+    },
+    "ConversationalSearch": {
+      "description": "Search input + results list for STIRR content discovery",
+      "extends": ["Column"],
+      "properties": {
+        "placeholder": { "type": "string", "description": "Search input placeholder" }
+      }
+    }
+  }
+}
