@@ -27,7 +27,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from prompt_builder import ROLE_DESCRIPTION, UI_DESCRIPTION, get_schema_manager, get_text_prompt
-from tools import search_content
+from tools import get_breaking_news, get_chapters, search_content
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -54,7 +54,7 @@ def _build_agent(use_ui: bool):
         name="stirr_content_agent",
         description="STIRR content discovery: search and browse streaming content.",
         instruction=instruction,
-        tools=[search_content],
+        tools=[search_content, get_breaking_news, get_chapters],
     )
 
 
@@ -98,8 +98,22 @@ class StirrContentAgent:
                     name="Search Content",
                     description="Search STIRR content by query (title, genre, etc.)",
                     tags=["content", "search"],
-                    examples=["Find Hitchcock movies", "Classic films", "Horror"],
-                )
+                    examples=["Find Hitchcock movies", "Something to watch tonight", "Classic films"],
+                ),
+                AgentSkill(
+                    id="get_breaking_news",
+                    name="Breaking News",
+                    description="Get breaking news / live channels for a location (e.g. Dallas)",
+                    tags=["news", "live"],
+                    examples=["Breaking news from Dallas", "Show me Dallas news"],
+                ),
+                AgentSkill(
+                    id="get_chapters",
+                    name="Chapter Navigation",
+                    description="Get chapters for a documentary or long-form video",
+                    tags=["chapters", "documentary"],
+                    examples=["Show me chapters", "I'm watching a documentary, show chapters"],
+                ),
             ],
         )
 

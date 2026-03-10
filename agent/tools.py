@@ -11,7 +11,11 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from google.adk.tools.tool_context import ToolContext
+
+try:
+    from google.adk.tools.tool_context import ToolContext
+except ImportError:
+    ToolContext = type("ToolContext", (), {"state": {}})  # minimal mock
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +138,68 @@ def _search_vodlix(query: str, limit: int) -> list[dict[str, Any]]:
             logger.warning(f"VODLIX discovery fallback failed: {e}")
 
     return items
+
+
+def _fetch_live_content(limit: int = 20) -> list[dict[str, Any]]:
+    """Fetch live channels from VODLIX (content_type=4, live=true)."""
+    headers = _get_auth_header()
+    if not headers:
+        return []
+    list_url = urljoin(VODLIX_API_BASE.rstrip("/") + "/", "v2/videos/list/")
+    items: list[dict[str, Any]] = []
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.get(
+                list_url,
+                headers=headers,
+                params={"content_type": 4, "live": "true", "limit": limit, "page": 1},
+            )
+            if resp.status_code == 200:
+                results = (resp.json().get("data") or {}).get("results", [])
+                for v in results:
+                    items.append(_vodlix_video_to_item(v, VODLIX_API_BASE))
+    except Exception as e:
+        logger.warning(f"VODLIX live fetch failed: {e}")
+    return items
+
+
+def get_breaking_news(location: str, tool_context: ToolContext, limit: int = 5) -> str:
+    """
+    Get breaking news / live channels for a location (e.g. Dallas).
+    Searches VODLIX live content for location or news keywords.
+    """
+    logger.info(f"--- TOOL CALLED: get_breaking_news (location={location}) ---")
+    if not VODLIX_USERNAME or not VODLIX_PASSWORD:
+        return json.dumps({"items": [], "headline": "News", "summary": "VODLIX not configured"})
+
+    live_items = _fetch_live_content(limit=50)
+    q = location.lower()
+    matches = [
+        i for i in live_items
+        if q in i["title"].lower() or q in i["genre"].lower() or q in i["description"].lower()
+        or "news" in i["title"].lower() or "news" in i["genre"].lower()
+    ]
+    items = matches[:limit] if matches else live_items[:limit]
+    headline = f"Breaking News from {location}" if items else "Breaking News"
+    summary = f"{len(items)} live channels" if items else "No live news channels found"
+    return json.dumps({"items": items, "headline": headline, "summary": summary})
+
+
+def get_chapters(video_title: str, tool_context: ToolContext) -> str:
+    """
+    Get chapters for a documentary or long-form content.
+    VODLIX may not have chapter data; returns sample chapters for demo.
+    """
+    logger.info(f"--- TOOL CALLED: get_chapters (video={video_title}) ---")
+    # Sample chapters for demo - real implementation would fetch from VODLIX if available
+    chapters = [
+        {"id": "ch1", "title": "Introduction", "timestamp": 0},
+        {"id": "ch2", "title": "Background & Context", "timestamp": 300},
+        {"id": "ch3", "title": "Key Events", "timestamp": 720},
+        {"id": "ch4", "title": "Analysis", "timestamp": 1200},
+        {"id": "ch5", "title": "Conclusion", "timestamp": 1800},
+    ]
+    return json.dumps({"chapters": chapters, "videoTitle": video_title or "Documentary"})
 
 
 def search_content(query: str, tool_context: ToolContext, limit: int = 10) -> str:

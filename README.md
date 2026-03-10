@@ -35,8 +35,10 @@ export GEMINI_API_KEY="your-key"
 export VODLIX_API_BASE="https://stirr.com/api"
 export VODLIX_USERNAME="your-email"
 export VODLIX_PASSWORD="your-password"
-uv run python -m stirr_content_agent
+uv run python run_server.py --port 10002
 ```
+
+**Tools-only mode** (no Gemini, for testing): `uv run python run_server.py --query-only --port 10002`
 
 The agent runs as an A2A server. Connect with the [A2UI Lit client](https://github.com/google/a2ui/tree/main/samples/client/lit) or the demo in `stirr-platform-nextgen`.
 
