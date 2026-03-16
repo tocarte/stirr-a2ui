@@ -235,3 +235,56 @@ def search_content(query: str, tool_context: ToolContext, limit: int = 10) -> st
     items = _search_vodlix(query, limit)
     logger.info(f" - Found {len(items)} items from VODLIX")
     return json.dumps({"items": items})
+
+
+def _fetch_video_by_id(video_id: str) -> dict[str, Any] | None:
+    """Fetch single video from VODLIX v2/videos/list/{id}."""
+    headers = _get_auth_header()
+    if not headers:
+        return None
+    url = urljoin(VODLIX_API_BASE.rstrip("/") + "/", f"v2/videos/list/{video_id}")
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            r = client.get(url, headers=headers)
+            if r.status_code == 200:
+                data = r.json()
+                return data.get("data") if isinstance(data.get("data"), dict) else None
+    except Exception as e:
+        logger.warning(f"Fetch video {video_id} failed: {e}")
+    return None
+
+
+def ask_about_video(video_id: str, question: str, tool_context: ToolContext) -> str:
+    """
+    Answer a question about the currently playing video.
+    Fetches video metadata from VODLIX, passes to Gemini as context. Phase 2/3.
+    """
+    logger.info(f"--- TOOL CALLED: ask_about_video (video_id={video_id}, question={question[:50]}...) ---")
+    video = _fetch_video_by_id(video_id)
+    context_parts = []
+    if video:
+        context_parts.append(f"Title: {video.get('title', 'Unknown')}")
+        if video.get("description"):
+            context_parts.append(f"Description: {video['description']}")
+        if video.get("tags"):
+            context_parts.append(f"Tags: {video['tags']}")
+        for cat in video.get("categories", []) or []:
+            if isinstance(cat, dict) and cat.get("category_name"):
+                context_parts.append(f"Category: {cat['category_name']}")
+    context = "\n".join(context_parts) if context_parts else "No metadata available for this video."
+    try:
+        import litellm
+        response = litellm.completion(
+            model=os.getenv("LITELLM_MODEL", "gemini/gemini-2.5-flash"),
+            messages=[
+                {"role": "system", "content": "Answer briefly based only on the video context. If the context doesn't contain the answer, say so."},
+                {"role": "user", "content": f"Video context:\n{context}\n\nUser question: {question}"},
+            ],
+        )
+        answer = response.choices[0].message.content or "No answer generated."
+    except Exception as e:
+        logger.warning(f"Gemini ask_about_video failed: {e}")
+        title = video.get("title", "Unknown") if video else "Unknown"
+        desc = (video.get("description") or "")[:200] if video else "No metadata."
+        answer = f"Based on the video: {title}. {desc} (Full Q&A requires GEMINI_API_KEY.)"
+    return json.dumps({"answer": answer})

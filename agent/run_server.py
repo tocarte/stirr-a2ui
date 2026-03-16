@@ -74,6 +74,28 @@ async def simple_query(request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+async def ask_about_video(request):
+    """POST /ask-about-video — Phase 2/3: answer question about playing video."""
+    body = await request.json()
+    video_id = body.get("video_id", "")
+    question = body.get("question", "")
+    if not video_id or not question:
+        return JSONResponse(
+            {"error": "video_id and question required"},
+            status_code=400,
+        )
+    try:
+        from tools import ask_about_video as ask_tool
+
+        ctx = _ToolContext()
+        raw = ask_tool(str(video_id), question, ctx)
+        data = json.loads(raw)
+        return JSONResponse({"type": "Answer", "data": data})
+    except Exception as e:
+        logger.exception("Ask about video failed")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @click.command()
 @click.option("--host", default="0.0.0.0")
 @click.option("--port", default=10002)
@@ -86,7 +108,10 @@ def main(host: str, port: int, query_only: bool):
     if query_only:
         from starlette.applications import Starlette
         from starlette.routing import Route
-        app = Starlette(routes=[Route("/query", simple_query, methods=["POST"])])
+        app = Starlette(routes=[
+            Route("/query", simple_query, methods=["POST"]),
+            Route("/ask-about-video", ask_about_video, methods=["POST"]),
+        ])
         app.add_middleware(
             CORSMiddleware,
             allow_origin_regex=r"http://localhost:\d+",
@@ -121,8 +146,9 @@ def main(host: str, port: int, query_only: bool):
     )
     app = server.build()
 
-    # Add simple /query endpoint for demo (no A2A protocol)
+    # Add simple /query and /ask-about-video endpoints for demo (no A2A protocol)
     app.add_route("/query", simple_query, methods=["POST"])
+    app.add_route("/ask-about-video", ask_about_video, methods=["POST"])
 
     app.add_middleware(
         CORSMiddleware,
