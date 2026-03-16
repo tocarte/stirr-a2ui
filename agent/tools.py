@@ -34,7 +34,7 @@ def _get_auth_header() -> dict[str, str]:
 
 
 def _vodlix_video_to_item(video: dict[str, Any], api_base: str) -> dict[str, Any]:
-    """Map VODLIX video to ContentShelf item format."""
+    """Map VODLIX video to ContentShelf item format. Includes play_url for VideoPlayer."""
     video_id = str(video.get("videoid") or video.get("id", ""))
     thumbs = video.get("thumbs", {})
     if isinstance(thumbs, dict):
@@ -51,12 +51,30 @@ def _vodlix_video_to_item(video: dict[str, Any], api_base: str) -> dict[str, Any
             genres.append(cat["category_name"])
     genre = ", ".join(genres) if genres else video.get("genre", "")
 
+    # play_url: watch page for embed/iframe. VODLIX list API has no hls_url; construct from watch_url or copy_url.
+    base_url = api_base.rstrip("/").replace("/api", "") or "https://stirr.com"
+    watch_url = video.get("watch_url", "")
+    copy_url = video.get("copy_url", "")
+    if watch_url:
+        play_url = watch_url if watch_url.startswith("http") else urljoin(base_url, watch_url.lstrip("/"))
+    elif copy_url and copy_url.startswith("http"):
+        play_url = copy_url
+    else:
+        play_url = f"{base_url}/watch/{video_id}" if video_id else ""
+
+    # Live content may have epg_url or force_hls_http_url for direct HLS (future)
+    is_live = video.get("content_type") == 4 or video.get("live") or video.get("live_status")
+    hls_url = video.get("epg_url") or video.get("force_hls_http_url") or video.get("hls_url") or ""
+
     return {
         "id": video_id,
         "title": video.get("title", "Untitled"),
         "genre": genre,
         "image_url": image_url or "https://via.placeholder.com/320x180?text=No+Image",
         "description": (video.get("description") or "")[:200],
+        "play_url": play_url,
+        "is_live": bool(is_live),
+        "hls_url": hls_url or None,  # Direct HLS when available (live epg_url, or DataGraphs streamUrl)
     }
 
 
