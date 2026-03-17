@@ -7,6 +7,7 @@ import base64
 import json
 import logging
 import os
+import re
 from typing import Any, Optional
 from urllib.parse import urljoin
 
@@ -220,9 +221,33 @@ def get_chapters(video_title: str, tool_context: ToolContext) -> str:
     return json.dumps({"chapters": chapters, "videoTitle": video_title or "Documentary"})
 
 
+def _search_live_by_query(query: str, limit: int) -> list[dict[str, Any]]:
+    """Search live channels by query (station call letters, city, news)."""
+    live_items = _fetch_live_content(limit=100)
+    if not query or not query.strip():
+        return live_items[:limit]
+    q = query.lower().strip()
+    tokens = [t for t in q.split() if len(t) >= 2]
+    matches: list[tuple[int, dict[str, Any]]] = []
+    for i in live_items:
+        title_l = i["title"].lower()
+        genre_l = (i.get("genre") or "").lower()
+        desc_l = (i.get("description") or "").lower()
+        combined = f"{title_l} {genre_l} {desc_l}"
+        if q in combined:
+            matches.append((10, i))  # Full query match
+        elif tokens:
+            n_matched = sum(1 for t in tokens if t in combined)
+            if n_matched > 0:
+                matches.append((n_matched, i))
+    matches.sort(key=lambda x: -x[0])
+    return [i for _, i in matches[:limit]] if matches else []
+
+
 def search_content(query: str, tool_context: ToolContext, limit: int = 10) -> str:
     """
     Search STIRR content by query via VODLIX API. Returns JSON list of items for ContentShelf.
+    Searches both VOD (movies) and live channels (news, local stations like WNYC, WLOS, Albany, Asheville).
 
     Requires: VODLIX_API_BASE, VODLIX_USERNAME, VODLIX_PASSWORD
     """
@@ -232,8 +257,29 @@ def search_content(query: str, tool_context: ToolContext, limit: int = 10) -> st
         logger.warning("VODLIX credentials not set. Set VODLIX_API_BASE, VODLIX_USERNAME, VODLIX_PASSWORD.")
         return json.dumps({"items": [], "error": "VODLIX credentials not configured"})
 
-    items = _search_vodlix(query, limit)
-    logger.info(f" - Found {len(items)} items from VODLIX")
+    items: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    # 1. Search VOD (movies) first
+    vod_items = _search_vodlix(query, limit)
+    for i in vod_items:
+        vid = i.get("id", "")
+        if vid and vid not in seen_ids:
+            seen_ids.add(vid)
+            items.append(i)
+
+    # 2. Add live channels (news, local stations like WNYC, WLOS, Albany, Asheville)
+    live_limit = max(0, limit - len(items))
+    if live_limit > 0:
+        live_items = _search_live_by_query(query, limit=live_limit)
+        for i in live_items:
+            vid = i.get("id", "")
+            if vid and vid not in seen_ids:
+                seen_ids.add(vid)
+                items.append(i)
+
+    n_live = sum(1 for i in items if i.get("is_live"))
+    logger.info(f" - Found {len(items)} items ({n_live} live, {len(items) - n_live} VOD)")
     return json.dumps({"items": items})
 
 
@@ -248,43 +294,172 @@ def _fetch_video_by_id(video_id: str) -> Optional[dict[str, Any]]:
             r = client.get(url, headers=headers)
             if r.status_code == 200:
                 data = r.json()
-                return data.get("data") if isinstance(data.get("data"), dict) else None
+                inner = data.get("data")
+                if isinstance(inner, dict) and "title" in inner:
+                    return inner
+                if isinstance(inner, dict) and "results" in inner:
+                    results = inner.get("results") or []
+                    return results[0] if results else None
+                if isinstance(inner, list) and inner:
+                    return inner[0]
+                return inner if isinstance(inner, dict) else None
     except Exception as e:
         logger.warning(f"Fetch video {video_id} failed: {e}")
     return None
 
 
-def ask_about_video(video_id: str, question: str, tool_context: ToolContext) -> str:
+def ask_about_video(
+    video_id: str,
+    question: str,
+    tool_context: ToolContext,
+    ocr_onscreen_text: Optional[list[str]] = None,
+) -> str:
     """
     Answer a question about the currently playing video.
-    Fetches video metadata from VODLIX, passes to Gemini as context. Phase 2/3.
+    Phase 3: Intent classifier + context subset + structured output.
+    P4-H5: Accepts ocr_onscreen_text from client-side TextDetector (Chrome).
     """
     logger.info(f"--- TOOL CALLED: ask_about_video (video_id={video_id}, question={question[:50]}...) ---")
     video = _fetch_video_by_id(video_id)
-    context_parts = []
-    if video:
-        context_parts.append(f"Title: {video.get('title', 'Unknown')}")
-        if video.get("description"):
-            context_parts.append(f"Description: {video['description']}")
-        if video.get("tags"):
-            context_parts.append(f"Tags: {video['tags']}")
-        for cat in video.get("categories", []) or []:
+
+    from intent import (
+        classify_intent,
+        build_context_for_intent,
+        build_minimal_context_bundle,
+        SYSTEM_PROMPT,
+        INTENT_PROMPTS,
+    )
+
+    intent = classify_intent(question)
+    context_bundle = build_minimal_context_bundle(video)
+
+    # P4-H5: Add client-side OCR when provided
+    if ocr_onscreen_text and isinstance(ocr_onscreen_text, list):
+        context_bundle.setdefault("ocr", {})["onscreen_text"] = [
+            str(t).strip() for t in ocr_onscreen_text if t and str(t).strip()
+        ]
+        logger.info(f"ocr: added {len(context_bundle['ocr']['onscreen_text'])} on-screen text items")
+
+    # utility_intent: fetch recommendations so the model can suggest "what else to watch"
+    if intent == "utility_intent":
+        recs: list[dict[str, Any]] = []
+        genre = (video or {}).get("genre", "") or ""
+        for cat in (video or {}).get("categories") or []:
             if isinstance(cat, dict) and cat.get("category_name"):
-                context_parts.append(f"Category: {cat['category_name']}")
-    context = "\n".join(context_parts) if context_parts else "No metadata available for this video."
+                genre = cat.get("category_name", "")
+                break
+        is_live = (video or {}).get("content_type") == 4 or (video or {}).get("live")
+        search_q = (genre or "").strip() or ("news" if is_live else "movies")
+        vod_items = _search_vodlix(search_q, limit=6)
+        live_items = _search_live_by_query(search_q, limit=6)
+        # Fallback: if few results, add discovery (movies, comedy) for variety
+        if len(vod_items) + len(live_items) < 4:
+            vod_items = vod_items or _search_vodlix("movies", limit=6)
+            live_items = live_items or _search_live_by_query("news", limit=4)
+        current_title = (video or {}).get("title", "")
+        for i in (live_items + vod_items):
+            if len(recs) >= 10:
+                break
+            if i.get("title") == current_title:
+                continue
+            recs.append({"title": i.get("title", ""), "type": "live" if i.get("is_live") else "vod"})
+        if recs:
+            context_bundle.setdefault("ui_context", {})["visible_recommendations"] = recs
+            logger.info(f"utility_intent: added {len(recs)} recommendations to context")
+
+    context_text = build_context_for_intent(intent, context_bundle)
+    intent_instruction = INTENT_PROMPTS.get(intent, INTENT_PROMPTS["general_broadcast_intent"])
+
     try:
-        import litellm
-        response = litellm.completion(
-            model=os.getenv("LITELLM_MODEL", "gemini/gemini-2.5-flash"),
-            messages=[
-                {"role": "system", "content": "Answer briefly based only on the video context. If the context doesn't contain the answer, say so."},
-                {"role": "user", "content": f"Video context:\n{context}\n\nUser question: {question}"},
-            ],
-        )
-        answer = response.choices[0].message.content or "No answer generated."
-    except Exception as e:
-        logger.warning(f"Gemini ask_about_video failed: {e}")
+        from pathlib import Path
+        from dotenv import load_dotenv
+        _env = Path(__file__).parent / ".env"
+        if _env.exists():
+            load_dotenv(_env)
+    except Exception:
+        pass
+
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        logger.warning("GEMINI_API_KEY not set")
         title = video.get("title", "Unknown") if video else "Unknown"
         desc = (video.get("description") or "")[:200] if video else "No metadata."
-        answer = f"Based on the video: {title}. {desc} (Full Q&A requires GEMINI_API_KEY.)"
-    return json.dumps({"answer": answer})
+        return json.dumps({
+            "answer": f"Based on the video: {title}. {desc} (Set GEMINI_API_KEY in agent/.env for full Q&A.)",
+            "answer_type": intent,
+            "primary_answer": None,
+            "supporting_points": [],
+            "confidence": 0.5,
+        })
+
+    utility_note = ""
+    if intent == "utility_intent":
+        utility_note = "\n\nIMPORTANT: The context includes a 'What else to watch' list. You MUST recommend those specific titles. Do NOT say 'the context doesn't contain that' or 'it does not specify what else.' List the titles by name.\n"
+
+    user_prompt = f"""Context for this turn:
+{context_text}
+{utility_note}
+Intent: {intent}
+Instruction: {intent_instruction}
+
+User question: {question}
+
+Respond with a JSON object:
+{{
+  "answer_type": "{intent}",
+  "primary_answer": "Your main answer (1-3 sentences, concise, viewer-friendly)",
+  "supporting_points": ["Optional bullet 1", "Optional bullet 2"],
+  "confidence": 0.0-1.0,
+  "suggested_follow_up": "Optional short follow-up suggestion or null"
+}}
+
+Return only valid JSON, no markdown or extra text."""
+
+    try:
+        from google import genai
+        from google.genai.types import GenerateContentConfig
+
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+        response = client.models.generate_content(
+            model=model,
+            contents=user_prompt,
+            config=GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+        )
+        raw = (getattr(response, "text", None) or str(response) or "").strip()
+        # Strip markdown code blocks if present
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        data = json.loads(raw)
+        answer = data.get("primary_answer") or data.get("answer", raw)
+        return json.dumps({
+            "answer": answer,
+            "answer_type": data.get("answer_type", intent),
+            "primary_answer": data.get("primary_answer") or answer,
+            "supporting_points": data.get("supporting_points") or [],
+            "confidence": float(data.get("confidence", 0.8)),
+            "suggested_follow_up": data.get("suggested_follow_up"),
+        })
+    except json.JSONDecodeError as e:
+        logger.warning(f"Gemini returned non-JSON, wrapping: {e}")
+        fallback = raw[:2000] if raw else "No answer generated."
+        return json.dumps({
+            "answer": fallback,
+            "answer_type": intent,
+            "primary_answer": None,
+            "supporting_points": [],
+            "confidence": 0.7,
+        })
+    except Exception as e:
+        logger.warning(f"Gemini ask_about_video failed: {e}", exc_info=True)
+        title = video.get("title", "Unknown") if video else "Unknown"
+        desc = (video.get("description") or "")[:200] if video else "No metadata."
+        err_msg = str(e)[:150] if str(e) else "Unknown error"
+        return json.dumps({
+            "answer": f"Based on the video: {title}. {desc} (Gemini error: {err_msg})",
+            "answer_type": intent,
+            "primary_answer": None,
+            "supporting_points": [],
+            "confidence": 0.5,
+        })

@@ -68,7 +68,13 @@ def _dispatch_query(query: str) -> dict:
         return {"type": "ChapterNav", "data": data}
 
     # 3. Something to watch / content search
-    search_q = "tonight" if "tonight" in q or "watch" in q and "something" in q else query or "movies"
+    # Use broad discovery term for generic "something to watch" queries; "tonight" returns few results
+    if "tonight" in q and ("watch" in q or "something" in q):
+        search_q = "movies"  # "tonight" rarely appears in metadata
+    elif "watch" in q and "something" in q:
+        search_q = "movies"
+    else:
+        search_q = query or "movies"
     raw = search_content(search_q, ctx, limit=10)
     data = json.loads(raw)
     return {"type": "ContentShelf", "data": data}
@@ -89,10 +95,11 @@ async def simple_query(request):
 
 
 async def ask_about_video(request):
-    """POST /ask-about-video — Phase 2/3: answer question about playing video."""
+    """POST /ask-about-video — Phase 2/3: answer question about playing video. P4-H5: accepts ocr_onscreen_text."""
     body = await request.json()
     video_id = body.get("video_id", "")
     question = body.get("question", "")
+    ocr_onscreen_text = body.get("ocr_onscreen_text")
     if not video_id or not question:
         return JSONResponse(
             {"error": "video_id and question required"},
@@ -102,7 +109,7 @@ async def ask_about_video(request):
         from tools import ask_about_video as ask_tool
 
         ctx = _ToolContext()
-        raw = ask_tool(str(video_id), question, ctx)
+        raw = ask_tool(str(video_id), question, ctx, ocr_onscreen_text=ocr_onscreen_text)
         data = json.loads(raw)
         return JSONResponse({"type": "Answer", "data": data})
     except Exception as e:
