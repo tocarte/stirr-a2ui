@@ -34,6 +34,23 @@ def _get_auth_header() -> dict[str, str]:
     return {"Authorization": f"Basic {encoded}"}
 
 
+def _epg_channel_id_to_hls_url(epg_channel_id: str) -> str:
+    """
+    Construct Amagi HLS URL from VODLIX epg_channel_id.
+    Pattern from STIRR watch page inspection (WNYT Albany): amg01942-amg01942c5-stirr-us-10184.
+    See stirr-control/docs/VODLIX_NATIVE_HLS_FINDINGS.md
+    Only applies to Amagi channels (epg_channel_id starts with amg); others (FTFLive.com, 1312, LSN) use different CDNs.
+    """
+    if not epg_channel_id or not isinstance(epg_channel_id, str):
+        return ""
+    epg = epg_channel_id.strip()
+    epg_lo = epg.lower()
+    if len(epg) < 8 or not epg_lo.startswith("amg"):
+        return ""
+    prefix = epg_lo[:8]
+    return f"https://{prefix}-{epg_lo}-stirr-us-10184.playouts.now.amagi.tv/playlistR720p.m3u8"
+
+
 def _vodlix_video_to_item(video: dict[str, Any], api_base: str) -> dict[str, Any]:
     """Map VODLIX video to ContentShelf item format. Includes play_url for VideoPlayer."""
     video_id = str(video.get("videoid") or video.get("id", ""))
@@ -63,9 +80,14 @@ def _vodlix_video_to_item(video: dict[str, Any], api_base: str) -> dict[str, Any
     else:
         play_url = f"{base_url}/watch/{video_id}" if video_id else ""
 
-    # Live content may have epg_url or force_hls_http_url for direct HLS (future)
+    # Live content: prefer epg_channel_id → Amagi HLS (from watch page inspection), else API fields
     is_live = video.get("content_type") == 4 or video.get("live") or video.get("live_status")
-    hls_url = video.get("epg_url") or video.get("force_hls_http_url") or video.get("hls_url") or ""
+    hls_url = (
+        video.get("force_hls_http_url")
+        or video.get("hls_url")
+        or (_epg_channel_id_to_hls_url(video.get("epg_channel_id", "")) if is_live else "")
+        or ""
+    )
 
     return {
         "id": video_id,
@@ -313,11 +335,16 @@ def ask_about_video(
     question: str,
     tool_context: ToolContext,
     ocr_onscreen_text: Optional[list[str]] = None,
+    vision_local: Optional[dict[str, Any]] = None,
+    frame_image_base64: Optional[str] = None,
 ) -> str:
     """
     Answer a question about the currently playing video.
     Phase 3: Intent classifier + context subset + structured output.
     P4-H5: Accepts ocr_onscreen_text from client-side TextDetector (Chrome).
+    P4-H5b: Accepts vision_local { scene, ocr } from Gemini Nano (Chrome Prompt API).
+    P4-H6: Accepts frame_image_base64 for server-side Gemini Vision (when client can capture).
+    Prefers vision_local when present; else frame_image_base64 for Gemini Vision; else ocr_onscreen_text.
     """
     logger.info(f"--- TOOL CALLED: ask_about_video (video_id={video_id}, question={question[:50]}...) ---")
     video = _fetch_video_by_id(video_id)
@@ -333,12 +360,24 @@ def ask_about_video(
     intent = classify_intent(question)
     context_bundle = build_minimal_context_bundle(video)
 
-    # P4-H5: Add client-side OCR when provided
-    if ocr_onscreen_text and isinstance(ocr_onscreen_text, list):
+    # P4-H5b: Prefer vision_local (Gemini Nano) when provided
+    if vision_local and isinstance(vision_local, dict):
+        scene = vision_local.get("scene")
+        ocr_list = vision_local.get("ocr")
+        if isinstance(scene, str) and scene.strip():
+            context_bundle.setdefault("vision", {})["scene_summary"] = scene.strip()
+            logger.info("vision: added scene_summary from vision_local")
+        if isinstance(ocr_list, list) and ocr_list:
+            context_bundle.setdefault("ocr", {})["onscreen_text"] = [
+                str(t).strip() for t in ocr_list if t and str(t).strip()
+            ]
+            logger.info(f"ocr: added {len(context_bundle['ocr']['onscreen_text'])} on-screen text from vision_local")
+    # P4-H5: Fallback to TextDetector OCR when vision_local not provided
+    elif ocr_onscreen_text and isinstance(ocr_onscreen_text, list):
         context_bundle.setdefault("ocr", {})["onscreen_text"] = [
             str(t).strip() for t in ocr_onscreen_text if t and str(t).strip()
         ]
-        logger.info(f"ocr: added {len(context_bundle['ocr']['onscreen_text'])} on-screen text items")
+        logger.info(f"ocr: added {len(context_bundle['ocr']['onscreen_text'])} on-screen text items (TextDetector)")
 
     # utility_intent: fetch recommendations so the model can suggest "what else to watch"
     if intent == "utility_intent":
@@ -396,9 +435,24 @@ def ask_about_video(
     if intent == "utility_intent":
         utility_note = "\n\nIMPORTANT: The context includes a 'What else to watch' list. You MUST recommend those specific titles. Do NOT say 'the context doesn't contain that' or 'it does not specify what else.' List the titles by name.\n"
 
+    # When user asks "what's on screen" but no frame/OCR was captured, be explicit
+    has_vision = bool(
+        (vision_local and (vision_local.get("scene") or vision_local.get("ocr")))
+        or (frame_image_base64 and len(frame_image_base64) > 100)
+        or (ocr_onscreen_text and len(ocr_onscreen_text) > 0)
+    )
+    onscreen_no_vision_note = ""
+    if intent == "onscreen_intent" and not has_vision:
+        onscreen_no_vision_note = (
+            "\n\nIMPORTANT: No video frame or on-screen text was captured. "
+            "The context only has channel/program metadata. You MUST say that you couldn't see the screen "
+            "and suggest trying the Capture button (if available) or using native HLS playback. "
+            "Do NOT give a generic channel description that sounds like you're describing what's visually on screen.\n"
+        )
+
     user_prompt = f"""Context for this turn:
 {context_text}
-{utility_note}
+{utility_note}{onscreen_no_vision_note}
 Intent: {intent}
 Instruction: {intent_instruction}
 
@@ -417,13 +471,28 @@ Return only valid JSON, no markdown or extra text."""
 
     try:
         from google import genai
-        from google.genai.types import GenerateContentConfig
+        from google.genai.types import GenerateContentConfig, Part, Blob
 
         client = genai.Client(api_key=api_key)
         model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+
+        # P4-H6: When frame_image_base64 present, use Gemini Vision (multimodal)
+        if frame_image_base64 and isinstance(frame_image_base64, str) and len(frame_image_base64) > 100:
+            try:
+                img_bytes = base64.b64decode(frame_image_base64)
+                image_part = Part(inline_data=Blob(mime_type="image/jpeg", data=img_bytes))
+                text_part = Part.from_text(text=user_prompt)
+                contents = [image_part, text_part]
+                logger.info("Using Gemini Vision with frame image")
+            except Exception as e:
+                logger.warning(f"Failed to decode frame_image_base64, using text-only: {e}")
+                contents = user_prompt
+        else:
+            contents = user_prompt
+
         response = client.models.generate_content(
             model=model,
-            contents=user_prompt,
+            contents=contents,
             config=GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
         )
         raw = (getattr(response, "text", None) or str(response) or "").strip()

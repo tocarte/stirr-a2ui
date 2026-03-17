@@ -95,11 +95,13 @@ async def simple_query(request):
 
 
 async def ask_about_video(request):
-    """POST /ask-about-video — Phase 2/3: answer question about playing video. P4-H5: accepts ocr_onscreen_text."""
+    """POST /ask-about-video — Phase 2/3: answer question about playing video. P4-H5: ocr_onscreen_text. P4-H5b: vision_local."""
     body = await request.json()
     video_id = body.get("video_id", "")
     question = body.get("question", "")
     ocr_onscreen_text = body.get("ocr_onscreen_text")
+    vision_local = body.get("vision_local")
+    frame_image_base64 = body.get("frame_image_base64")
     if not video_id or not question:
         return JSONResponse(
             {"error": "video_id and question required"},
@@ -109,7 +111,14 @@ async def ask_about_video(request):
         from tools import ask_about_video as ask_tool
 
         ctx = _ToolContext()
-        raw = ask_tool(str(video_id), question, ctx, ocr_onscreen_text=ocr_onscreen_text)
+        raw = ask_tool(
+            str(video_id),
+            question,
+            ctx,
+            ocr_onscreen_text=ocr_onscreen_text,
+            vision_local=vision_local,
+            frame_image_base64=frame_image_base64,
+        )
         data = json.loads(raw)
         return JSONResponse({"type": "Answer", "data": data})
     except Exception as e:
