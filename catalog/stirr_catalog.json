@@ -43,6 +43,16 @@
         "chapters": { "type": "array", "description": "Array of {title, timestamp, action}" },
         "currentChapter": { "type": "string", "description": "ID of current chapter" }
       }
+    },
+    "VideoPlayer": {
+      "description": "Video playback. Renders play_url (watch page iframe) or hls_url (HLS manifest) when available.",
+      "extends": ["Card"],
+      "properties": {
+        "play_url": { "type": "string", "description": "Watch page URL or fallback (e.g. https://stirr.com/watch/{id})" },
+        "hls_url": { "type": "string", "description": "Direct HLS manifest (.m3u8) when available (DataGraphs streamUrl, live epg_url)" },
+        "title": { "type": "string", "description": "Video title" },
+        "isLive": { "type": "boolean", "description": "True for live streams" }
+      }
     }
   }
 }
