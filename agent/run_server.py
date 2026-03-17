@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 
 import click
 from dotenv import load_dotenv
@@ -20,9 +21,22 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route, Mount
 
-load_dotenv()
+# Load .env: STIRR_AGENT_ENV overrides path, else agent/.env
+_env_file = os.getenv("STIRR_AGENT_ENV") or Path(__file__).parent / ".env"
+load_dotenv(_env_file)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Require VODLIX credentials at startup — fail fast with clear message
+def _require_vodlix():
+    user = os.getenv("VODLIX_USERNAME", "").strip()
+    pwd = os.getenv("VODLIX_PASSWORD", "").strip()
+    if not user or not pwd:
+        print("ERROR: VODLIX credentials required. Set in agent/.env:")
+        print("  VODLIX_USERNAME=your-email")
+        print("  VODLIX_PASSWORD=your-password")
+        print("  (Copy from .env.example if needed)")
+        raise SystemExit(1)
 
 # Minimal tool context for direct tool calls (tools don't use state)
 class _ToolContext:
@@ -101,6 +115,7 @@ async def ask_about_video(request):
 @click.option("--port", default=10002)
 @click.option("--query-only", is_flag=True, help="Only run /query endpoint (no A2A, no GEMINI needed)")
 def main(host: str, port: int, query_only: bool):
+    _require_vodlix()
     if not query_only and not os.getenv("GEMINI_API_KEY"):
         logger.error("GEMINI_API_KEY required for full A2A server. Use --query-only for tools-only demo.")
         raise SystemExit(1)

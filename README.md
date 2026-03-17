@@ -29,16 +29,12 @@ stirr-a2ui/
 ### Run the STIRR Content Agent
 
 ```bash
-cd agent
-uv sync
-export GEMINI_API_KEY="your-key"
-export VODLIX_API_BASE="https://stirr.com/api"
-export VODLIX_USERNAME="your-email"
-export VODLIX_PASSWORD="your-password"
-uv run python run_server.py --port 10002
+cd agent   # from stirr-a2ui/ (or: cd stirr-a2ui/agent from Projects/)
+# First time: cp .env.example .env and add VODLIX_USERNAME, VODLIX_PASSWORD
+python3 run_server.py --query-only
 ```
 
-**Tools-only mode** (no Gemini, for testing): `uv run python run_server.py --query-only --port 10002`
+Agent **refuses to start** without VODLIX credentials (exits with clear error). Loads from `agent/.env`.
 
 The agent runs as an A2A server. Connect with the [A2UI Lit client](https://github.com/google/a2ui/tree/main/samples/client/lit) or the demo in `stirr-platform-nextgen`.
 
