@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 import httpx
@@ -237,7 +237,7 @@ def search_content(query: str, tool_context: ToolContext, limit: int = 10) -> st
     return json.dumps({"items": items})
 
 
-def _fetch_video_by_id(video_id: str) -> dict[str, Any] | None:
+def _fetch_video_by_id(video_id: str) -> Optional[dict[str, Any]]:
     """Fetch single video from VODLIX v2/videos/list/{id}."""
     headers = _get_auth_header()
     if not headers:
