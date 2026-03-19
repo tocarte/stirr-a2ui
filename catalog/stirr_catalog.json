@@ -1,6 +1,8 @@
 {
   "$schema": "https://a2ui.org/specification/v0_8/standard_catalog_definition.json",
   "version": "v0.8",
+  "catalogId": "stirr-intent",
+  "description": "STIRR intent-aware catalog: content discovery + Weather, Traffic, Finance widgets",
   "components": {
     "ContentShelf": {
       "description": "Horizontal shelf of content cards for STIRR",
@@ -52,6 +54,42 @@
         "hls_url": { "type": "string", "description": "Direct HLS manifest (.m3u8) when available (DataGraphs streamUrl, live epg_url)" },
         "title": { "type": "string", "description": "Video title" },
         "isLive": { "type": "boolean", "description": "True for live streams" }
+      }
+    },
+    "WeatherWidget": {
+      "description": "P4-H15a: Intent-aware weather widget for KNOW/DO moments. Location-based weather card.",
+      "extends": ["Card"],
+      "properties": {
+        "location": { "type": "string", "description": "City/region (e.g. Albany, NY)" },
+        "temp_f": { "type": "number", "description": "Temperature in Fahrenheit" },
+        "condition": { "type": "string", "description": "Weather condition (e.g. Partly Cloudy)" },
+        "forecast": { "type": "string", "description": "7-day or short forecast text" },
+        "humidity": { "type": "string", "description": "Humidity" },
+        "alerts": { "type": "array", "items": { "type": "string" }, "description": "Weather alerts" },
+        "summary": { "type": "string", "description": "Brief summary" }
+      }
+    },
+    "TrafficWidget": {
+      "description": "P4-H15a: Intent-aware traffic widget for KNOW/GO moments. Road conditions, delays, accidents.",
+      "extends": ["Card"],
+      "properties": {
+        "location": { "type": "string", "description": "City/region" },
+        "conditions": { "type": "string", "description": "Road conditions summary" },
+        "delays": { "type": "array", "items": { "type": "string" }, "description": "Delay descriptions" },
+        "accidents": { "type": "array", "items": { "type": "string" }, "description": "Accident reports" },
+        "summary": { "type": "string", "description": "Brief summary" }
+      }
+    },
+    "FinanceWidget": {
+      "description": "P4-H15a: Intent-aware finance widget for KNOW/DO moments. Stock ticker, price, change.",
+      "extends": ["Card"],
+      "properties": {
+        "symbol": { "type": "string", "description": "Stock symbol (e.g. AAPL)" },
+        "name": { "type": "string", "description": "Company name" },
+        "price": { "type": "number", "description": "Current price" },
+        "change": { "type": "number", "description": "Price change" },
+        "change_pct": { "type": "string", "description": "Percent change" },
+        "summary": { "type": "string", "description": "Brief summary" }
       }
     }
   }

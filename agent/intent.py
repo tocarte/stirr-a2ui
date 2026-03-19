@@ -45,6 +45,51 @@ _ENTITY_PATTERNS = re.compile(
     r"(who is |who'?s |where is |what is |what'?s )\w+",
     re.I,
 )
+# P4-H9: Web retrieval (LinkedTV-style) — want-to-know, want-to-do, want-to-buy
+_WEB_KNOW_PATTERNS = re.compile(
+    r"(who is |who'?s |what is |what'?s |where is |where'?s )\w+",
+    re.I,
+)
+_WEB_DO_PATTERNS = re.compile(
+    r"(how (do i|to|can i)|how'?d you|steps to|how do you)",
+    re.I,
+)
+_WEB_BUY_PATTERNS = re.compile(
+    r"(where (can i|to) buy|best price|where to get|buy .+ online)",
+    re.I,
+)
+_WEB_WEATHER_PATTERNS = re.compile(
+    r"(weather|forecast|temperature|rain|snow|humidity)",
+    re.I,
+)
+_WEB_TRAFFIC_PATTERNS = re.compile(
+    r"(traffic|road conditions|accident|construction|commute)",
+    re.I,
+)
+
+
+def needs_web_retrieval(message: str) -> bool:
+    """
+    P4-H9: Detect when web retrieval (entity/how-to/product/weather/traffic) would improve the answer.
+    Returns True for want-to-know, want-to-do, want-to-buy moments (LinkedTV-style).
+    """
+    q = (message or "").strip().lower()
+    if not q:
+        return False
+    # Exclude segment-style "what is this" / "what's that" — on-screen context suffices
+    if re.search(r"(what is|what'?s|where is)\s+(this|that)(\s|$|about)", q):
+        return False
+    if _WEB_KNOW_PATTERNS.search(q):
+        return True
+    if _WEB_DO_PATTERNS.search(q):
+        return True
+    if _WEB_BUY_PATTERNS.search(q):
+        return True
+    if _WEB_WEATHER_PATTERNS.search(q):
+        return True
+    if _WEB_TRAFFIC_PATTERNS.search(q):
+        return True
+    return False
 
 
 def classify_intent(message: str) -> str:
@@ -95,8 +140,10 @@ Rules:
 6. When evidence is partial, make a careful best-effort inference using "looks like" or "appears to be."
 7. Do not claim certainty when the evidence is weak.
 8. Do not say "the context doesn't contain the answer" if there is enough information to make a useful viewer-facing response.
-9. Keep answers concise, natural, and easy to scan.
-10. When helpful, include a short follow-up suggestion (weather, what's next, related viewing).
+9. Never refuse when program/channel metadata exists. Infer from it; use hedging language ("looks like", "appears to be") when uncertain.
+10. Keep answers concise, natural, and easy to scan.
+11. suggested_follow_up: Must be context-aware (People also ask style). Derive from on-screen content: people (e.g. Powell), topics (e.g. Fed, interest rates), entities. Examples: "What did Powell say about interest rates?", "More on the Fed". NEVER generic prompts like "What's coming up next?" or "Would you like to know what's next?"
+12. When "Previous assistant answer" is provided: the user may be asking a follow-up (e.g. "What is SkillsUSA?" after we mentioned SkillsUSA). Use that context. Infer from what we just described. Do NOT say "I don't see any information" if we just mentioned it.
 
 Tone: Friendly, clear, conversational, lightly polished. Avoid robotic language."""
 
@@ -125,8 +172,8 @@ INTENT_PROMPTS = {
     ),
     ENTITY_INTENT: (
         "The user is asking about a specific person, place, or thing. Use transcript, OCR, and "
-        "program metadata. If the entity isn't in context, make a best-effort inference or say "
-        "'I don't have details on that in the current context.'"
+        "program metadata. Prefer best-effort inference using 'looks like' or 'appears to be.' "
+        "Only if the entity is truly impossible to infer, say 'I'm not sure about that specifically.'"
     ),
     GENERAL_INTENT: (
         "Answer as a TV companion using whatever context is available. Combine channel, program, "
@@ -220,7 +267,10 @@ def build_context_for_intent(
         add_section("Recommendations", "\n".join(lines))
 
     if not parts:
-        return "No context available. Use program title and description if provided elsewhere."
+        return (
+            "No structured context. Make a best-effort inference from any available metadata. "
+            "Use 'looks like' or 'appears to be' when uncertain. Do not refuse."
+        )
 
     return "\n\n".join(parts)
 

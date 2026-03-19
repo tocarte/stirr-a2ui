@@ -31,12 +31,14 @@ stirr-a2ui/
 ```bash
 cd agent   # from stirr-a2ui/ (or: cd stirr-a2ui/agent from Projects/)
 # First time: cp .env.example .env and add VODLIX_USERNAME, VODLIX_PASSWORD
-python3 run_server.py --query-only
+python3 run_server.py
 ```
 
 Agent **refuses to start** without VODLIX credentials (exits with clear error). Loads from `agent/.env`.
 
-The agent runs as an A2A server. Connect with the [A2UI Lit client](https://github.com/google/a2ui/tree/main/samples/client/lit) or the demo in `stirr-platform-nextgen`.
+**Full A2A server** (default when `GEMINI_API_KEY` is set): Exposes the A2A protocol at `http://localhost:10002`. Agent card at `/.well-known/agent-card.json`. Connect with the [A2UI Lit client](https://github.com/google/a2ui/tree/main/samples/client/lit) or the demo in `stirr-platform-nextgen`.
+
+**Tools-only** (no Gemini): `python3 run_server.py --query-only` — REST endpoints only, no A2A.
 
 ### Run with A2UI Demo (stirr-platform-nextgen)
 

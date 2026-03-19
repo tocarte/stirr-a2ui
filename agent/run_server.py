@@ -94,14 +94,191 @@ async def simple_query(request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+async def news_search(request):
+    """POST /news-search — Search news by topic (e.g. when user clicks a headline)."""
+    market = ""
+    query = ""
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            market = (body.get("market") or "").strip()
+            query = (body.get("query") or "").strip()
+        except Exception:
+            pass
+    if not market:
+        market = (request.query_params.get("market") or "").strip()
+    if not query:
+        query = (request.query_params.get("query") or "").strip()
+    if not query:
+        return JSONResponse({"error": "query required", "headlines": [], "summary": ""}, status_code=400)
+    if not market:
+        market = "Albany, NY"  # default
+    try:
+        from tools import fetch_news_search
+
+        data = fetch_news_search(query, market, limit=3)
+        return JSONResponse(data)
+    except Exception as e:
+        logger.exception("News search failed")
+        return JSONResponse({"error": str(e), "headlines": [], "summary": ""}, status_code=500)
+
+
+async def match_headline_to_segment_handler(request):
+    """POST /match-headline-to-segment — P4-H12d: Match headline to transcript chunk for seek-to-moment."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    headline = (body.get("headline") or "").strip()
+    chunks = body.get("chunks") or []
+    if not headline:
+        return JSONResponse({"error": "headline required"}, status_code=400)
+    if not isinstance(chunks, list):
+        return JSONResponse({"error": "chunks must be array of {start_ms, text}"}, status_code=400)
+    try:
+        from tools import match_headline_to_segment
+        data = match_headline_to_segment(headline, chunks)
+        return JSONResponse(data)
+    except Exception as e:
+        logger.exception("Match headline failed")
+        return JSONResponse({"error": str(e), "start_ms": None}, status_code=500)
+
+
+async def video_by_id(request):
+    """GET /video?video_id=123 — P4-F2: Fetch VODLIX video by ID; return ContentShelf item (play_url, hls_url)."""
+    video_id = (request.query_params.get("video_id") or request.query_params.get("id") or "").strip()
+    if not video_id:
+        return JSONResponse({"error": "video_id required (e.g. ?video_id=123)"}, status_code=400)
+    try:
+        from tools import fetch_video_by_id
+        data = fetch_video_by_id(video_id)
+        if data.get("error") and "not found" in str(data.get("error", "")).lower():
+            return JSONResponse(data, status_code=404)
+        return JSONResponse(data)
+    except Exception as e:
+        logger.exception("Video by ID failed")
+        return JSONResponse({"error": str(e), "id": video_id}, status_code=500)
+
+
+async def weather_widget(request):
+    """GET/POST /weather — P4-H12b: Intent-aware weather widget. location param required."""
+    location = ""
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            location = (body.get("location") or "").strip()
+        except Exception:
+            pass
+    if not location:
+        location = (request.query_params.get("location") or "").strip()
+    if not location:
+        return JSONResponse({"error": "location required (e.g. Albany, NY)"}, status_code=400)
+    try:
+        from tools import fetch_weather_widget
+        data = fetch_weather_widget(location)
+        return JSONResponse(data)
+    except Exception as e:
+        logger.exception("Weather widget failed")
+        return JSONResponse({"error": str(e), "location": location}, status_code=500)
+
+
+async def traffic_widget(request):
+    """GET/POST /traffic — P4-H12b: Intent-aware traffic widget. location param required."""
+    location = ""
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            location = (body.get("location") or "").strip()
+        except Exception:
+            pass
+    if not location:
+        location = (request.query_params.get("location") or "").strip()
+    if not location:
+        return JSONResponse({"error": "location required (e.g. Albany, NY)"}, status_code=400)
+    try:
+        from tools import fetch_traffic_widget
+        data = fetch_traffic_widget(location)
+        return JSONResponse(data)
+    except Exception as e:
+        logger.exception("Traffic widget failed")
+        return JSONResponse({"error": str(e), "location": location}, status_code=500)
+
+
+async def finance_widget(request):
+    """GET/POST /finance — P4-H12b: Intent-aware finance widget. query param (ticker or company name) required."""
+    query = ""
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            query = (body.get("query") or body.get("symbol") or "").strip()
+        except Exception:
+            pass
+    if not query:
+        query = (request.query_params.get("query") or request.query_params.get("symbol") or "").strip()
+    if not query:
+        return JSONResponse({"error": "query required (e.g. AAPL or Tesla)"}, status_code=400)
+    try:
+        from tools import fetch_finance_widget
+        data = fetch_finance_widget(query)
+        return JSONResponse(data)
+    except Exception as e:
+        logger.exception("Finance widget failed")
+        return JSONResponse({"error": str(e), "query": query}, status_code=500)
+
+
+async def breaking_news(request):
+    """POST /breaking-news — P4-H12e: Fetch breaking news headlines for a market. Preload chat on station select."""
+    market = ""
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            market = (body.get("market") or "").strip()
+        except Exception:
+            pass
+    if not market:
+        market = (request.query_params.get("market") or "").strip()
+    if not market:
+        return JSONResponse({"error": "market required (e.g. Albany, NY)"}, status_code=400)
+    try:
+        from tools import fetch_breaking_news_headlines
+
+        data = fetch_breaking_news_headlines(market, limit=5)
+        return JSONResponse(data)
+    except Exception as e:
+        logger.exception("Breaking news failed")
+        return JSONResponse({"error": str(e), "headlines": [], "summary": ""}, status_code=500)
+
+
+async def moments_respond(request):
+    """POST /moments/respond — STIRR Moments Engine MVP. Accepts normalized perception from rolling buffer."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    try:
+        from tools import moments_respond as moments_tool
+
+        raw = moments_tool(body)
+        data = json.loads(raw)
+        if "error" in data:
+            return JSONResponse(data, status_code=400)
+        return JSONResponse(data)
+    except Exception as e:
+        logger.exception("Moments respond failed")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 async def ask_about_video(request):
-    """POST /ask-about-video — Phase 2/3: answer question about playing video. P4-H5: ocr_onscreen_text. P4-H5b: vision_local."""
+    """POST /ask-about-video — Phase 2/3: answer question about playing video. P4-H5: ocr_onscreen_text. P4-H5b: vision_local. Transcript from textTracks."""
     body = await request.json()
     video_id = body.get("video_id", "")
     question = body.get("question", "")
     ocr_onscreen_text = body.get("ocr_onscreen_text")
     vision_local = body.get("vision_local")
     frame_image_base64 = body.get("frame_image_base64")
+    transcript_local = body.get("transcript_local")
+    last_assistant_message = body.get("last_assistant_message")
+    ad_break_state = body.get("ad_break_state")
     if not video_id or not question:
         return JSONResponse(
             {"error": "video_id and question required"},
@@ -118,6 +295,9 @@ async def ask_about_video(request):
             ocr_onscreen_text=ocr_onscreen_text,
             vision_local=vision_local,
             frame_image_base64=frame_image_base64,
+            transcript_local=transcript_local,
+            last_assistant_message=last_assistant_message,
+            ad_break_state=ad_break_state,
         )
         data = json.loads(raw)
         return JSONResponse({"type": "Answer", "data": data})
@@ -141,7 +321,16 @@ def main(host: str, port: int, query_only: bool):
         from starlette.routing import Route
         app = Starlette(routes=[
             Route("/query", simple_query, methods=["POST"]),
+            Route("/moments/respond", moments_respond, methods=["POST"]),
+        Route("/v1/moments/respond", moments_respond, methods=["POST"]),
             Route("/ask-about-video", ask_about_video, methods=["POST"]),
+            Route("/breaking-news", breaking_news, methods=["POST", "GET"]),
+            Route("/news-search", news_search, methods=["POST", "GET"]),
+            Route("/weather", weather_widget, methods=["POST", "GET"]),
+            Route("/traffic", traffic_widget, methods=["POST", "GET"]),
+            Route("/finance", finance_widget, methods=["POST", "GET"]),
+            Route("/video", video_by_id, methods=["GET"]),
+            Route("/match-headline-to-segment", match_headline_to_segment_handler, methods=["POST"]),
         ])
         app.add_middleware(
             CORSMiddleware,
@@ -179,7 +368,16 @@ def main(host: str, port: int, query_only: bool):
 
     # Add simple /query and /ask-about-video endpoints for demo (no A2A protocol)
     app.add_route("/query", simple_query, methods=["POST"])
+    app.add_route("/moments/respond", moments_respond, methods=["POST"])
+    app.add_route("/v1/moments/respond", moments_respond, methods=["POST"])
     app.add_route("/ask-about-video", ask_about_video, methods=["POST"])
+    app.add_route("/breaking-news", breaking_news, methods=["POST", "GET"])
+    app.add_route("/news-search", news_search, methods=["POST", "GET"])
+    app.add_route("/weather", weather_widget, methods=["POST", "GET"])
+    app.add_route("/traffic", traffic_widget, methods=["POST", "GET"])
+    app.add_route("/finance", finance_widget, methods=["POST", "GET"])
+    app.add_route("/video", video_by_id, methods=["GET"])
+    app.add_route("/match-headline-to-segment", match_headline_to_segment_handler, methods=["POST"])
 
     app.add_middleware(
         CORSMiddleware,

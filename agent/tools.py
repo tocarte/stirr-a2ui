@@ -204,6 +204,304 @@ def _fetch_live_content(limit: int = 20) -> list[dict[str, Any]]:
     return items
 
 
+def fetch_breaking_news_headlines(market: str, limit: int = 5) -> dict[str, Any]:
+    """
+    Fetch breaking news headlines for a market using Gemini with Google Search grounding.
+    P4-H12e: Preload chat when user selects local station.
+    Returns: {"headlines": ["...", ...], "summary": "..."} or {"headlines": [], "summary": "..."} on error.
+    """
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        logger.warning("GEMINI_API_KEY not set")
+        return {"headlines": [], "summary": "Set GEMINI_API_KEY for breaking news."}
+
+    try:
+        from google import genai
+        from google.genai.types import GenerateContentConfig, Tool, GoogleSearch
+
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+
+        prompt = f"""What are the top {limit} breaking news stories in {market} right now?
+Return ONLY a bullet list. No intro sentence. One line per story. Be concise.
+Format exactly:
+- Headline 1
+- Headline 2
+- Headline 3"""
+
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=GenerateContentConfig(tools=[Tool(google_search=GoogleSearch())]),
+        )
+        text = (getattr(response, "text", None) or str(response) or "").strip()
+        if not text:
+            return {"headlines": [], "summary": f"No headlines for {market}."}
+
+        # Parse bullets: lines starting with - • * or split by " * " when Gemini returns inline
+        raw_lines = [l.strip() for l in text.split("\n") if l.strip()]
+        bullets = []
+        for line in raw_lines:
+            if line.startswith("-") or line.startswith("•") or line.startswith("*"):
+                bullets.append(re.sub(r"^[-•*]\s*", "", line).strip())
+            elif " * " in line:
+                for part in line.split(" * "):
+                    p = part.strip()
+                    if p and len(p) > 10 and "here are the top" not in p.lower():
+                        bullets.append(p[:120])
+        headlines = [h for h in bullets[:limit] if h and len(h) > 5]
+        if not headlines and text:
+            headlines = [text[:150]]
+
+        return {"headlines": headlines, "summary": f"Top stories in {market}"}
+    except Exception as e:
+        logger.warning(f"fetch_breaking_news_headlines failed: {e}")
+        return {"headlines": [], "summary": str(e)}
+
+
+def fetch_news_search(query: str, market: str, limit: int = 3) -> dict[str, Any]:
+    """
+    Search for news about a specific topic in a market. Used when user clicks a headline.
+    Returns: {"headlines": ["...", ...], "summary": "..."}
+    """
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return {"headlines": [], "summary": "Set GEMINI_API_KEY."}
+
+    try:
+        from google import genai
+        from google.genai.types import GenerateContentConfig, Tool, GoogleSearch
+
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+
+        prompt = f"""Find {limit} recent news articles about this topic in {market}: "{query[:100]}"
+Return ONLY a bullet list. No intro. One line per story.
+- Story 1
+- Story 2"""
+
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=GenerateContentConfig(tools=[Tool(google_search=GoogleSearch())]),
+        )
+        text = (getattr(response, "text", None) or str(response) or "").strip()
+        if not text:
+            return {"headlines": [], "summary": f"No additional stories for: {query[:50]}..."}
+
+        bullets = []
+        for line in text.split("\n"):
+            line = line.strip()
+            if line and (line.startswith("-") or line.startswith("•") or line.startswith("*")):
+                h = re.sub(r"^[-•*]\s*", "", line).strip()[:120]
+                if h and len(h) > 5:
+                    bullets.append(h)
+        headlines = bullets[:limit] if bullets else [text[:150]]
+
+        return {"headlines": headlines, "summary": f"More on: {query[:40]}..."}
+    except Exception as e:
+        logger.warning(f"fetch_news_search failed: {e}")
+        return {"headlines": [], "summary": str(e)}
+
+
+def fetch_weather_widget(location: str) -> dict[str, Any]:
+    """
+    P4-H12b: Fetch structured weather data for a location using Gemini + Google Search grounding.
+    Returns: { location, temp_f, condition, forecast, humidity, alerts, summary }
+    """
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return {"error": "GEMINI_API_KEY not set", "location": location, "summary": "Set GEMINI_API_KEY for weather."}
+
+    try:
+        from google import genai
+        from google.genai.types import GenerateContentConfig, Tool, GoogleSearch
+
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+
+        prompt = f"""What is the current weather in {location} right now? Use web search.
+Return ONLY valid JSON, no markdown:
+{{
+  "location": "{location}",
+  "temp_f": number (current temp in Fahrenheit),
+  "condition": "string (e.g. Partly Cloudy, Rain)",
+  "forecast": "string (1-2 sentence outlook)",
+  "humidity": "string (e.g. 65%) or null",
+  "alerts": ["any active weather alerts"] or [],
+  "summary": "string (1 sentence viewer-friendly summary)"
+}}"""
+
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=GenerateContentConfig(tools=[Tool(google_search=GoogleSearch())]),
+        )
+        raw = (getattr(response, "text", None) or str(response) or "").strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        try:
+            data = json.loads(raw)
+            data.setdefault("location", location)
+            data.setdefault("summary", f"Weather in {location}")
+            return data
+        except json.JSONDecodeError:
+            return {"location": location, "summary": raw[:200] or f"Weather in {location}", "error": "Parse failed"}
+    except Exception as e:
+        logger.warning(f"fetch_weather_widget failed: {e}")
+        return {"error": str(e), "location": location, "summary": f"Weather unavailable for {location}"}
+
+
+def fetch_traffic_widget(location: str) -> dict[str, Any]:
+    """
+    P4-H12b: Fetch structured traffic data for a location using Gemini + Google Search grounding.
+    Returns: { location, conditions, delays, accidents, summary }
+    """
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return {"error": "GEMINI_API_KEY not set", "location": location, "summary": "Set GEMINI_API_KEY for traffic."}
+
+    try:
+        from google import genai
+        from google.genai.types import GenerateContentConfig, Tool, GoogleSearch
+
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+
+        prompt = f"""What are the current traffic and road conditions in {location} right now? Use web search.
+Return ONLY valid JSON, no markdown:
+{{
+  "location": "{location}",
+  "conditions": "string (overall traffic/road conditions)",
+  "delays": ["list of delays or construction"] or [],
+  "accidents": ["any reported accidents"] or [],
+  "summary": "string (1-2 sentence viewer-friendly summary)"
+}}"""
+
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=GenerateContentConfig(tools=[Tool(google_search=GoogleSearch())]),
+        )
+        raw = (getattr(response, "text", None) or str(response) or "").strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        try:
+            data = json.loads(raw)
+            data.setdefault("location", location)
+            data.setdefault("summary", f"Traffic in {location}")
+            return data
+        except json.JSONDecodeError:
+            return {"location": location, "summary": raw[:200] or f"Traffic in {location}", "error": "Parse failed"}
+    except Exception as e:
+        logger.warning(f"fetch_traffic_widget failed: {e}")
+        return {"error": str(e), "location": location, "summary": f"Traffic unavailable for {location}"}
+
+
+def fetch_finance_widget(query: str) -> dict[str, Any]:
+    """
+    P4-H12b: Fetch structured finance/stock data using Gemini + Google Search grounding.
+    Query can be ticker (AAPL) or company name (Tesla).
+    Returns: { symbol, name, price, change, change_pct, summary }
+    """
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return {"error": "GEMINI_API_KEY not set", "summary": "Set GEMINI_API_KEY for finance."}
+
+    try:
+        from google import genai
+        from google.genai.types import GenerateContentConfig, Tool, GoogleSearch
+
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+
+        prompt = f"""What is the current stock price for "{query}"? Use web search for real-time data.
+Return ONLY valid JSON, no markdown:
+{{
+  "symbol": "string (e.g. AAPL)",
+  "name": "string (company name)",
+  "price": number (current price),
+  "change": number (dollar change, can be negative),
+  "change_pct": "string (e.g. +1.2%)",
+  "summary": "string (1 sentence viewer-friendly summary)"
+}}"""
+
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=GenerateContentConfig(tools=[Tool(google_search=GoogleSearch())]),
+        )
+        raw = (getattr(response, "text", None) or str(response) or "").strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        try:
+            data = json.loads(raw)
+            data.setdefault("summary", f"Stock info for {query}")
+            return data
+        except json.JSONDecodeError:
+            return {"summary": raw[:200] or f"Finance info for {query}", "error": "Parse failed"}
+    except Exception as e:
+        logger.warning(f"fetch_finance_widget failed: {e}")
+        return {"error": str(e), "summary": f"Finance unavailable for {query}"}
+
+
+def match_headline_to_segment(headline: str, chunks: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    P4-H12d: Match a news headline to a transcript chunk; return start_ms for seek-to-moment.
+    Uses Gemini to find the best matching chunk by semantic similarity.
+    """
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return {"start_ms": None, "error": "GEMINI_API_KEY not set"}
+
+    if not headline or not chunks:
+        return {"start_ms": None}
+
+    try:
+        from google import genai
+        from google.genai.types import GenerateContentConfig
+
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+
+        chunks_str = "\n".join(
+            f"- [{c.get('start_ms', 0)}ms] {c.get('text', '')[:150]}"
+            for c in chunks[:30]
+        )
+        prompt = f"""Given this news headline and these video transcript chunks (with start_ms), which chunk best discusses or relates to the headline?
+Return ONLY valid JSON: {{ "start_ms": number or null, "reason": "brief reason" }}
+If no good match, use "start_ms": null.
+
+Headline: {headline[:200]}
+
+Chunks:
+{chunks_str}"""
+
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=GenerateContentConfig(),
+        )
+        raw = (getattr(response, "text", None) or str(response) or "").strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        try:
+            data = json.loads(raw)
+            start_ms = data.get("start_ms")
+            if start_ms is not None and isinstance(start_ms, (int, float)):
+                return {"start_ms": int(start_ms), "reason": data.get("reason", "")}
+            return {"start_ms": None, "reason": data.get("reason", "")}
+        except json.JSONDecodeError:
+            return {"start_ms": None}
+    except Exception as e:
+        logger.warning(f"match_headline_to_segment failed: {e}")
+        return {"start_ms": None, "error": str(e)}
+
+
 def get_breaking_news(location: str, tool_context: ToolContext, limit: int = 5) -> str:
     """
     Get breaking news / live channels for a location (e.g. Dallas).
@@ -330,6 +628,21 @@ def _fetch_video_by_id(video_id: str) -> Optional[dict[str, Any]]:
     return None
 
 
+def fetch_video_by_id(video_id: str) -> dict[str, Any]:
+    """
+    P4-F2: Fetch VODLIX video by ID; return ContentShelf item format with play_url (copy_url/watch page).
+    Used when loading video from URL param or when only ID is available.
+    """
+    if not video_id or not str(video_id).strip():
+        return {"error": "video_id required", "id": ""}
+    vid = str(video_id).strip()
+    video = _fetch_video_by_id(vid)
+    if not video:
+        return {"error": f"Video {vid} not found", "id": vid}
+    item = _vodlix_video_to_item(video, VODLIX_API_BASE)
+    return item
+
+
 def ask_about_video(
     video_id: str,
     question: str,
@@ -337,6 +650,9 @@ def ask_about_video(
     ocr_onscreen_text: Optional[list[str]] = None,
     vision_local: Optional[dict[str, Any]] = None,
     frame_image_base64: Optional[str] = None,
+    transcript_local: Optional[dict[str, Any]] = None,
+    last_assistant_message: Optional[str] = None,
+    ad_break_state: Optional[str] = None,
 ) -> str:
     """
     Answer a question about the currently playing video.
@@ -351,13 +667,56 @@ def ask_about_video(
 
     from intent import (
         classify_intent,
+        needs_web_retrieval,
         build_context_for_intent,
         build_minimal_context_bundle,
         SYSTEM_PROMPT,
         INTENT_PROMPTS,
     )
+    from moment import (
+        detect_moment,
+        get_moment_prompt_addition,
+        MOMENT_GO,
+        MOMENT_DO,
+        MOMENT_BUY,
+    )
 
     intent = classify_intent(question)
+    # P4-H10: Moment detection before LLM
+    is_live = bool(video and (video.get("content_type") == 4 or video.get("live")))
+    player_state = {"video_id": video_id, "is_live": is_live}
+    moment = detect_moment(question, session={}, player_state=player_state)
+    moment_prompt = get_moment_prompt_addition(moment)
+    logger.info(f"ask_about_video: moment={moment} intent={intent} ad_break_state={ad_break_state}")
+
+    # P4-H13: Ad break gate per spec §5.3 (when ad_break_state provided and live)
+    if is_live and ad_break_state:
+        if ad_break_state in ("pre", "mid"):
+            logger.info("ask_about_video: P4-H13 ad_suppression | ad_break_state=%s", ad_break_state)
+            return json.dumps({
+                "answer": "An ad break is in progress. Ask again when the program returns.",
+                "answer_type": intent,
+                "primary_answer": "An ad break is in progress. Ask again when the program returns.",
+                "supporting_points": [],
+                "confidence": 1.0,
+                "suggested_follow_up": None,
+                "location_entities": [],
+                "moment": moment,
+                "ad_break_suppressed": True,
+            })
+        if ad_break_state == "post" and moment == MOMENT_BUY:
+            logger.info("ask_about_video: P4-H13 BUY suppressed post-ad")
+            return json.dumps({
+                "answer": "Let me find that for you — one moment.",
+                "answer_type": intent,
+                "primary_answer": "Let me find that for you — one moment.",
+                "supporting_points": [],
+                "confidence": 1.0,
+                "suggested_follow_up": "Ask again in a few seconds when we're back.",
+                "location_entities": [],
+                "moment": moment,
+                "ad_break_suppressed": True,
+            })
     context_bundle = build_minimal_context_bundle(video)
 
     # P4-H5b: Prefer vision_local (Gemini Nano) when provided
@@ -378,6 +737,13 @@ def ask_about_video(
             str(t).strip() for t in ocr_onscreen_text if t and str(t).strip()
         ]
         logger.info(f"ocr: added {len(context_bundle['ocr']['onscreen_text'])} on-screen text items (TextDetector)")
+
+    # Transcript from textTracks (WebVTT/captions)
+    if transcript_local and isinstance(transcript_local, dict):
+        trans_text = transcript_local.get("text") or transcript_local.get("current_text", "")
+        if isinstance(trans_text, str) and trans_text.strip():
+            context_bundle.setdefault("transcript", {})["current_text"] = trans_text.strip()
+            logger.info(f"transcript: added {len(trans_text)} chars from textTracks")
 
     # utility_intent: fetch recommendations so the model can suggest "what else to watch"
     if intent == "utility_intent":
@@ -407,7 +773,14 @@ def ask_about_video(
             logger.info(f"utility_intent: added {len(recs)} recommendations to context")
 
     context_text = build_context_for_intent(intent, context_bundle)
-    intent_instruction = INTENT_PROMPTS.get(intent, INTENT_PROMPTS["general_broadcast_intent"])
+    intent_instruction = INTENT_PROMPTS.get(intent, INTENT_PROMPTS["general_broadcast_intent"]) + moment_prompt
+
+    recent_block = ""
+    if last_assistant_message and isinstance(last_assistant_message, str) and last_assistant_message.strip():
+        recent_block = (
+            f"\nPrevious assistant answer (user may be asking a follow-up about something we just mentioned):\n"
+            f"{last_assistant_message.strip()[:2000]}\n\n"
+        )
 
     try:
         from pathlib import Path
@@ -429,13 +802,20 @@ def ask_about_video(
             "primary_answer": None,
             "supporting_points": [],
             "confidence": 0.5,
+            "moment": moment,
         })
 
     utility_note = ""
     if intent == "utility_intent":
         utility_note = "\n\nIMPORTANT: The context includes a 'What else to watch' list. You MUST recommend those specific titles. Do NOT say 'the context doesn't contain that' or 'it does not specify what else.' List the titles by name.\n"
 
-    # When user asks "what's on screen" but no frame/OCR was captured, be explicit
+    # P4-H9 + P4-H10: Web retrieval when needed or moment is GO/DO/BUY
+    use_web = needs_web_retrieval(question) or moment in (MOMENT_GO, MOMENT_DO, MOMENT_BUY)
+    web_note = ""
+    if use_web:
+        web_note = "\n\nWeb search is enabled. Use real-time web results to enrich your answer (e.g. for people, places, weather, traffic, how-to). Combine on-screen context with web data when both are relevant.\n"
+
+    # P4-H7: When user asks "what's on screen" but no frame/OCR was captured, use best-effort inference
     has_vision = bool(
         (vision_local and (vision_local.get("scene") or vision_local.get("ocr")))
         or (frame_image_base64 and len(frame_image_base64) > 100)
@@ -444,15 +824,16 @@ def ask_about_video(
     onscreen_no_vision_note = ""
     if intent == "onscreen_intent" and not has_vision:
         onscreen_no_vision_note = (
-            "\n\nIMPORTANT: No video frame or on-screen text was captured. "
-            "The context only has channel/program metadata. You MUST say that you couldn't see the screen "
-            "and suggest trying the Capture button (if available) or using native HLS playback. "
-            "Do NOT give a generic channel description that sounds like you're describing what's visually on screen.\n"
+            "\n\nNo video frame or on-screen text was captured. Infer from program metadata (title, "
+            "description, genre) using 'looks like' or 'appears to be.' Give a helpful viewer-facing answer. "
+            "If you can infer the program type (e.g. local news, sports), describe what you'd expect to see. "
+            "Do NOT refuse or say 'I couldn't see the screen.' Optionally suggest the Capture button for "
+            "more accurate visuals.\n"
         )
 
     user_prompt = f"""Context for this turn:
-{context_text}
-{utility_note}{onscreen_no_vision_note}
+{recent_block}{context_text}
+{utility_note}{web_note}{onscreen_no_vision_note}
 Intent: {intent}
 Instruction: {intent_instruction}
 
@@ -464,17 +845,30 @@ Respond with a JSON object:
   "primary_answer": "Your main answer (1-3 sentences, concise, viewer-friendly)",
   "supporting_points": ["Optional bullet 1", "Optional bullet 2"],
   "confidence": 0.0-1.0,
-  "suggested_follow_up": "Optional short follow-up suggestion or null"
+  "suggested_follow_up": "Context-aware follow-up derived from on-screen content (people, topics, entities). E.g. 'What did Powell say about interest rates?' or 'More on the Fed' — NOT generic like 'What's coming up next?'",
+  "location_entities": []
 }}
+Extract location_entities: cities/towns/regions from context (OCR, transcript, channel) for weather links. Examples: Albany, Saratoga, Glens Falls. Use [] if none.
 
 Return only valid JSON, no markdown or extra text."""
 
     try:
         from google import genai
-        from google.genai.types import GenerateContentConfig, Part, Blob
+        from google.genai.types import GenerateContentConfig, Part, Blob, Tool, GoogleSearch
 
         client = genai.Client(api_key=api_key)
         model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+
+        gen_config = (
+            GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                tools=[Tool(google_search=GoogleSearch())],
+            )
+            if use_web
+            else GenerateContentConfig(system_instruction=SYSTEM_PROMPT)
+        )
+        if use_web:
+            logger.info("P4-H9: Using Google Search grounding for web retrieval")
 
         # P4-H6: When frame_image_base64 present, use Gemini Vision (multimodal)
         if frame_image_base64 and isinstance(frame_image_base64, str) and len(frame_image_base64) > 100:
@@ -493,15 +887,41 @@ Return only valid JSON, no markdown or extra text."""
         response = client.models.generate_content(
             model=model,
             contents=contents,
-            config=GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            config=gen_config,
         )
         raw = (getattr(response, "text", None) or str(response) or "").strip()
         # Strip markdown code blocks if present
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw)
-        data = json.loads(raw)
+        # Extract JSON object if wrapped in extra text (e.g. "Here is the response:\n{...}")
+        data = None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            start = raw.find("{")
+            if start >= 0:
+                depth, end = 0, start
+                for i, c in enumerate(raw[start:], start):
+                    if c == "{":
+                        depth += 1
+                    elif c == "}":
+                        depth -= 1
+                        if depth == 0:
+                            end = i
+                            break
+                if depth == 0:
+                    try:
+                        data = json.loads(raw[start : end + 1])
+                    except json.JSONDecodeError:
+                        pass
+        if not data:
+            raise json.JSONDecodeError("No valid JSON", raw, 0)
         answer = data.get("primary_answer") or data.get("answer", raw)
+        locs = data.get("location_entities")
+        if not isinstance(locs, list):
+            locs = []
+        locs = [str(x).strip() for x in locs if x and str(x).strip() and len(str(x)) < 50]
         return json.dumps({
             "answer": answer,
             "answer_type": data.get("answer_type", intent),
@@ -509,6 +929,8 @@ Return only valid JSON, no markdown or extra text."""
             "supporting_points": data.get("supporting_points") or [],
             "confidence": float(data.get("confidence", 0.8)),
             "suggested_follow_up": data.get("suggested_follow_up"),
+            "location_entities": locs,
+            "moment": moment,
         })
     except json.JSONDecodeError as e:
         logger.warning(f"Gemini returned non-JSON, wrapping: {e}")
@@ -519,6 +941,7 @@ Return only valid JSON, no markdown or extra text."""
             "primary_answer": None,
             "supporting_points": [],
             "confidence": 0.7,
+            "moment": moment,
         })
     except Exception as e:
         logger.warning(f"Gemini ask_about_video failed: {e}", exc_info=True)
@@ -531,4 +954,374 @@ Return only valid JSON, no markdown or extra text."""
             "primary_answer": None,
             "supporting_points": [],
             "confidence": 0.5,
+            "moment": moment,
+        })
+
+
+# --- STIRR Moments Engine MVP ---
+# See stirr-platform-nextgen/frontend/lib/moments/
+
+MOMENTS_SYSTEM_PROMPT = """You are STIRR's live TV companion.
+
+Your job is to help viewers understand what they are watching right now.
+Use the supplied evidence to answer clearly and concisely.
+
+Rules:
+- Prioritize the most relevant evidence for the question.
+- If evidence is partial, make a careful best-effort inference.
+- Never say the context is missing if useful evidence exists.
+- If uncertain, use phrases like "it looks like" or "this appears to be".
+- Keep answers concise and grounded.
+- suggested_follow_up: MUST be context-aware (People also ask style). Derive from what's on screen: segment topic, people/entities (e.g. Powell, Fed), program name. Examples: "What did Powell say about interest rates?", "More on the Fed", "What's the latest on [topic]?". NEVER use generic prompts like "What's coming up next?" or "Would you like to know what's next?"
+- When "Previous assistant answer" is provided: the user may be asking a follow-up (e.g. "What is SkillsUSA?" after we mentioned SkillsUSA). Use that context. Infer from what we just described (e.g. "Based on the scene we discussed, SkillsUSA appears to be an organization that runs competitions..."). Do NOT say "I don't see any information" if we just mentioned it.
+- location_entities: Extract cities, towns, regions from OCR, transcript, channel name (e.g. Albany, Saratoga, Glens Falls). Used for weather links. Return [] if none.
+- Return valid JSON only."""
+
+
+def _moments_join_list(values: Optional[list[str]]) -> str:
+    return " | ".join(v for v in (values or []) if v) if values else "none"
+
+
+def _moments_segment_block(req: dict[str, Any]) -> str:
+    """Segment summary block when available. Spec 24.13."""
+    seg = req.get("segment_summary") or {}
+    active = req.get("active_segment") or {}
+    if not seg and not active:
+        return ""
+    seg_type = seg.get("segment_type") or active.get("segment_type") or "unknown"
+    summary = seg.get("summary") or active.get("summary") or "none"
+    return f"Segment type: {seg_type}\nSegment summary: {summary}\n\n"
+
+
+def _moments_recent_context_block(req: dict[str, Any]) -> str:
+    """Previous assistant message for follow-up context (e.g. 'What is SkillsUSA?' after discussing SkillsUSA)."""
+    last = req.get("last_assistant_message") or ""
+    if not last or not isinstance(last, str) or not last.strip():
+        return ""
+    return f"Previous assistant answer (user may be asking a follow-up about something we just mentioned):\n{last.strip()}\n\n"
+
+
+def _moments_select_prompt(req: dict[str, Any]) -> str:
+    """Build prompt for Moments API based on user_message intent. Spec 24.13."""
+    q = (req.get("user_message") or "").lower()
+    player = req.get("player") or {}
+    perception = req.get("perception") or {}
+
+    channel = player.get("channel_name") or player.get("channel_id", "")
+    is_live = player.get("is_live", True)
+    current_scene = perception.get("current_scene") or "none"
+    persistent_ocr = _moments_join_list(perception.get("persistent_ocr"))
+    current_ocr = _moments_join_list(perception.get("current_ocr"))
+    recent_scenes = _moments_join_list(perception.get("recent_scenes"))
+    seg_block = _moments_segment_block(req)
+    recent_block = _moments_recent_context_block(req)
+
+    transcript = (
+        (req.get("transcript_local") or {}).get("text")
+        or (req.get("transcript_server") or {}).get("text")
+        or "none"
+    )
+
+    if re.search(r"what am i watching|what channel|is this live", q):
+        return f"""Question: {req['user_message']}
+{recent_block}Channel: {channel}
+Is live: {is_live}
+{seg_block}Current scene: {current_scene}
+Persistent on-screen text: {persistent_ocr}
+Current on-screen text: {current_ocr}
+Transcript: {transcript}
+
+Prioritize:
+1. channel metadata
+2. segment type and summary (when present)
+3. persistent on-screen text
+4. transcript
+5. current scene
+
+Return JSON:
+{{
+  "primary_answer": string,
+  "supporting_points": string[],
+  "confidence": number,
+  "suggested_follow_up": "Context-aware follow-up (e.g. about Powell, Fed, topic on screen) — NOT generic 'What's coming up next?'",
+  "location_entities": []
+}}
+Extract location_entities: cities/towns/regions from context for weather links. Use [] if none."""
+
+    if re.search(r"what'?s on screen|describe.*screen|what do you see", q):
+        return f"""Question: {req['user_message']}
+{recent_block}Current scene: {current_scene}
+Current on-screen text: {current_ocr}
+Persistent on-screen text: {persistent_ocr}
+Recent scenes: {recent_scenes}
+{seg_block}Transcript: {transcript}
+Channel: {channel}
+
+Prioritize:
+1. current scene
+2. current on-screen text
+3. persistent on-screen text
+4. active segment summary (when present)
+5. transcript
+6. channel metadata
+
+Return JSON:
+{{
+  "primary_answer": string,
+  "supporting_points": string[],
+  "confidence": number,
+  "suggested_follow_up": "Context-aware follow-up (e.g. about Powell, Fed, topic on screen) — NOT generic 'What's coming up next?'",
+  "location_entities": []
+}}
+Extract location_entities: cities/towns/regions from context for weather links. Use [] if none."""
+
+    # whats_this_about, entity questions (What is X?), etc. — segment summary first per Spec 24.13
+    return f"""Question: {req['user_message']}
+{recent_block}{seg_block}Persistent on-screen text: {persistent_ocr}
+Transcript: {transcript}
+Current on-screen text: {current_ocr}
+Current scene: {current_scene}
+Channel: {channel}
+
+Prioritize:
+1. segment summary
+2. active segment type
+3. transcript
+4. persistent on-screen text
+5. current on-screen text
+6. current scene
+
+Return JSON:
+{{
+  "primary_answer": string,
+  "supporting_points": string[],
+  "confidence": number,
+  "suggested_follow_up": "Context-aware follow-up (e.g. about Powell, Fed, topic on screen) — NOT generic 'What's coming up next?'",
+  "location_entities": []
+}}
+Extract location_entities: cities/towns/regions from context for weather links. Use [] if none."""
+
+
+def moments_respond(req: dict[str, Any]) -> str:
+    """
+    STIRR Moments Engine MVP: respond to KNOW moments (what am I watching, what's on screen, what's this about).
+    P4-H13: Ad break gate per spec §5.3 — pre/mid suppress KNOW,GO,DO,BUY; post suppresses BUY only.
+    """
+    import time
+    _start = time.perf_counter()
+
+    user_message = (req.get("user_message") or "").strip()
+    player = req.get("player") or {}
+    if not user_message:
+        return json.dumps({"error": "user_message required"})
+    channel_id = (player.get("channel_id") or "").strip()
+    if not channel_id:
+        return json.dumps({"error": "player.channel_id required"})
+
+    # P4-H13: Moment detection before gate (needed for post + BUY suppression)
+    from moment import detect_moment, get_moment_prompt_addition, MOMENT_BUY, MOMENT_GO, MOMENT_DO
+
+    player_state = {"channel_id": channel_id, "is_live": player.get("is_live", True)}
+    moment = detect_moment(user_message, session={}, player_state=player_state)
+
+    ad_break_state = player.get("ad_break_state")
+    # §5.3 pre/mid: suppress KNOW, GO, DO, BUY (WATCH allowed but we return generic message for MVP)
+    if ad_break_state in ("pre", "mid"):
+        logger.info("moments_respond: P4-H13 ad_suppression | ad_break_state=%s moment=%s", ad_break_state, moment)
+        return json.dumps({
+            "moment": moment,
+            "moment_confidence": 1.0,
+            "primary_answer": "An ad break is in progress. Ask again when the program returns.",
+            "supporting_points": [],
+            "confidence": 1.0,
+            "suggested_follow_up": None,
+            "location_entities": [],
+            "components": [{"type": "text", "content": "An ad break is in progress. Ask again when the program returns."}],
+            "actions": [{"type": "ASK_FOLLOW_UP", "label": "What's this about?", "component": "ConversationalSearch"}],
+            "ad_break_suppressed": True,
+            "catalog_id": "stirr-intent",
+        })
+    # §5.3 post: suppress BUY only (avoid cannibalization of just-played ad)
+    if ad_break_state == "post" and moment == MOMENT_BUY:
+        logger.info("moments_respond: P4-H13 BUY suppressed post-ad | ad_break_state=post")
+        return json.dumps({
+            "moment": MOMENT_BUY,
+            "moment_confidence": 1.0,
+            "primary_answer": "Let me find that for you — one moment.",
+            "supporting_points": [],
+            "confidence": 1.0,
+            "suggested_follow_up": "Ask again in a few seconds when we're back.",
+            "location_entities": [],
+            "components": [{"type": "text", "content": "Let me find that for you — one moment."}],
+            "actions": [{"type": "ASK_FOLLOW_UP", "label": "Ask again in a few seconds when we're back.", "component": "ConversationalSearch"}],
+            "ad_break_suppressed": True,
+            "catalog_id": "stirr-intent",
+        })
+
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        logger.warning("GEMINI_API_KEY not set for moments_respond")
+        fallback_msg = f"You're watching {player.get('channel_name') or channel_id}. (Set GEMINI_API_KEY for full answers.)"
+        return json.dumps({
+            "moment": "KNOW",
+            "moment_confidence": 0.5,
+            "primary_answer": fallback_msg,
+            "supporting_points": [],
+            "confidence": 0.5,
+            "suggested_follow_up": None,
+            "location_entities": [],
+            "components": [{"type": "text", "content": fallback_msg}],
+            "actions": [{"type": "ASK_FOLLOW_UP", "label": "What's this about?", "component": "ConversationalSearch"}],
+            "catalog_id": "stirr-intent",
+        })
+
+    perception = req.get("perception") or {}
+    perception_source = perception.get("perception_source", "unknown")
+    persistent_ocr = perception.get("persistent_ocr") or []
+    has_persistent_ocr = len(persistent_ocr) > 0
+    logger.info(
+        "moments_respond: perception_source=%s | persistent_ocr=%s | transcript=%s",
+        perception_source,
+        "yes" if has_persistent_ocr else "no",
+        "yes" if (req.get("transcript_local") or {}).get("text") or (req.get("transcript_server") or {}).get("text") else "no",
+    )
+
+    # Moment already detected above for ad gate; continue with prompt assembly
+    from intent import needs_web_retrieval
+
+    moment_prompt = get_moment_prompt_addition(moment)
+    logger.info(f"moments_respond: moment={moment}")
+
+    # P4-H9 + P4-H10: Web retrieval; moment GO/DO/BUY → force web
+    use_web = needs_web_retrieval(user_message) or moment in (MOMENT_GO, MOMENT_DO, MOMENT_BUY)
+
+    user_prompt = _moments_select_prompt(req)
+    if moment_prompt:
+        user_prompt += moment_prompt
+    if use_web:
+        user_prompt += "\n\nWeb search is enabled. Use real-time web results to enrich your answer (people, places, weather, traffic, how-to). Combine on-screen context with web data when both are relevant."
+
+    try:
+        from google import genai
+        from google.genai.types import GenerateContentConfig, Tool, GoogleSearch
+
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
+
+        gen_config = (
+            GenerateContentConfig(
+                system_instruction=MOMENTS_SYSTEM_PROMPT,
+                tools=[Tool(google_search=GoogleSearch())],
+            )
+            if use_web
+            else GenerateContentConfig(system_instruction=MOMENTS_SYSTEM_PROMPT)
+        )
+        if use_web:
+            logger.info("moments_respond: P4-H9 using Google Search grounding")
+
+        response = client.models.generate_content(
+            model=model,
+            contents=user_prompt,
+            config=gen_config,
+        )
+        raw = (getattr(response, "text", None) or str(response) or "").strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+
+        data = None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            start = raw.find("{")
+            if start >= 0:
+                depth, end = 0, start
+                for i, c in enumerate(raw[start:], start):
+                    if c == "{":
+                        depth += 1
+                    elif c == "}":
+                        depth -= 1
+                        if depth == 0:
+                            end = i
+                            break
+                if depth == 0:
+                    try:
+                        data = json.loads(raw[start : end + 1])
+                    except json.JSONDecodeError:
+                        pass
+
+        if not data:
+            raise json.JSONDecodeError("No valid JSON", raw, 0)
+
+        primary = data.get("primary_answer") or data.get("answer", raw[:500])
+        confidence = float(data.get("confidence", 0.8))
+        locs = data.get("location_entities")
+        if not isinstance(locs, list):
+            locs = []
+        locs = [str(x).strip() for x in locs if x and str(x).strip() and len(str(x)) < 50]
+        suggested = data.get("suggested_follow_up")
+        supporting = data.get("supporting_points") or []
+
+        # P4-H14: MomentsResponse contract — components, actions, moment_confidence
+        chip_items: list[str] = []
+        if suggested and isinstance(suggested, str) and suggested.strip():
+            chip_items.append(suggested.strip())
+        for loc in locs:
+            chip_items.append(f"What's the weather in {loc}?")
+        components: list[dict[str, Any]] = [
+            {"type": "text", "content": primary},
+        ]
+        if chip_items:
+            components.append({"type": "chipRow", "items": chip_items[:6]})
+
+        # P4-H15: Actions include component label per spec §6
+        actions_list: list[dict[str, Any]] = []
+        if suggested and isinstance(suggested, str) and suggested.strip():
+            actions_list.append({
+                "type": "ASK_FOLLOW_UP",
+                "label": suggested.strip()[:80],
+                "component": "ConversationalSearch",
+            })
+        for loc in locs[:3]:
+            actions_list.append({"type": "WEATHER_LINK", "label": f"Weather in {loc}", "component": "WeatherWidget"})
+        if not actions_list:
+            actions_list.append({
+                "type": "ASK_FOLLOW_UP",
+                "label": "What's this about?",
+                "component": "ConversationalSearch",
+            })
+
+        _latency_ms = (time.perf_counter() - _start) * 1000
+        logger.info(
+            "moments_respond: latency_ms=%.0f | confidence=%.2f | location_entities=%s",
+            _latency_ms,
+            confidence,
+            locs[:3] if locs else "[]",
+        )
+        return json.dumps({
+            "moment": moment,
+            "moment_confidence": confidence,
+            "primary_answer": primary,
+            "supporting_points": supporting,
+            "confidence": confidence,
+            "suggested_follow_up": suggested,
+            "location_entities": locs,
+            "components": components,
+            "actions": actions_list,
+            "catalog_id": "stirr-intent",
+        })
+    except Exception as e:
+        logger.warning(f"moments_respond failed: {e}", exc_info=True)
+        err_msg = f"You're watching {player.get('channel_name') or channel_id}. (Error: {str(e)[:80]})"
+        return json.dumps({
+            "moment": "KNOW",
+            "moment_confidence": 0.5,
+            "primary_answer": err_msg,
+            "supporting_points": [],
+            "confidence": 0.5,
+            "suggested_follow_up": None,
+            "location_entities": [],
+            "components": [{"type": "text", "content": err_msg}],
+            "actions": [{"type": "ASK_FOLLOW_UP", "label": "What's this about?", "component": "ConversationalSearch"}],
+            "catalog_id": "stirr-intent",
         })
