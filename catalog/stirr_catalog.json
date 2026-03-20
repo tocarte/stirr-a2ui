@@ -2,7 +2,7 @@
   "$schema": "https://a2ui.org/specification/v0_8/standard_catalog_definition.json",
   "version": "v0.8",
   "catalogId": "stirr-intent",
-  "description": "STIRR intent-aware catalog: content discovery + Weather, Traffic, Finance widgets",
+  "description": "STIRR Streaming Intelligence catalog: content discovery + Weather, Traffic, Finance widgets",
   "components": {
     "ContentShelf": {
       "description": "Horizontal shelf of content cards for STIRR",
@@ -57,7 +57,7 @@
       }
     },
     "WeatherWidget": {
-      "description": "P4-H15a: Intent-aware weather widget for KNOW/DO moments. Location-based weather card.",
+      "description": "P4-H15a: Streaming Intelligence weather widget for KNOW/DO moments. Location-based weather card.",
       "extends": ["Card"],
       "properties": {
         "location": { "type": "string", "description": "City/region (e.g. Albany, NY)" },
@@ -70,7 +70,7 @@
       }
     },
     "TrafficWidget": {
-      "description": "P4-H15a: Intent-aware traffic widget for KNOW/GO moments. Road conditions, delays, accidents.",
+      "description": "P4-H15a: Streaming Intelligence traffic widget for KNOW/GO moments. Road conditions, delays, accidents.",
       "extends": ["Card"],
       "properties": {
         "location": { "type": "string", "description": "City/region" },
@@ -81,7 +81,7 @@
       }
     },
     "FinanceWidget": {
-      "description": "P4-H15a: Intent-aware finance widget for KNOW/DO moments. Stock ticker, price, change.",
+      "description": "P4-H15a: Streaming Intelligence finance widget for KNOW/DO moments. Stock ticker, price, change.",
       "extends": ["Card"],
       "properties": {
         "symbol": { "type": "string", "description": "Stock symbol (e.g. AAPL)" },

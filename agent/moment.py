@@ -8,7 +8,7 @@ See stirr-control/architecture/stirr-moments-inference-model.md §3.
 """
 
 import re
-from typing import Any
+from typing import Any, Dict, Optional
 
 # STIRR Moment taxonomy
 MOMENT_WATCH = "WATCH"
@@ -53,8 +53,8 @@ _WATCH_PATTERNS = re.compile(
 
 def detect_moment(
     query: str,
-    session: dict[str, Any] | None = None,
-    player_state: dict[str, Any] | None = None,
+    session: Optional[Dict[str, Any]] = None,
+    player_state: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     P4-H10: Detect StirrMoment from query, session, and player state.

@@ -12,6 +12,7 @@ from a2a.types import Task, TaskState, UnsupportedOperationError
 from a2a.utils import new_agent_parts_message, new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
 from a2ui.a2a import try_activate_a2ui_extension
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -52,5 +53,5 @@ class StirrContentAgentExecutor(AgentExecutor):
             )
             break
 
-    async def cancel(self, request: RequestContext, event_queue: EventQueue) -> Task | None:
+    async def cancel(self, request: RequestContext, event_queue: EventQueue) -> Optional[Task]:
         raise ServerError(error=UnsupportedOperationError())

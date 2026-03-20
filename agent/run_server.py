@@ -161,7 +161,7 @@ async def video_by_id(request):
 
 
 async def weather_widget(request):
-    """GET/POST /weather — P4-H12b: Intent-aware weather widget. location param required."""
+    """GET/POST /weather — P4-H12b: Streaming Intelligence weather widget. location param required."""
     location = ""
     if request.method == "POST":
         try:
@@ -183,7 +183,7 @@ async def weather_widget(request):
 
 
 async def traffic_widget(request):
-    """GET/POST /traffic — P4-H12b: Intent-aware traffic widget. location param required."""
+    """GET/POST /traffic — P4-H12b: Streaming Intelligence traffic widget. location param required."""
     location = ""
     if request.method == "POST":
         try:
@@ -205,7 +205,7 @@ async def traffic_widget(request):
 
 
 async def finance_widget(request):
-    """GET/POST /finance — P4-H12b: Intent-aware finance widget. query param (ticker or company name) required."""
+    """GET/POST /finance — P4-H12b: Streaming Intelligence finance widget. query param (ticker or company name) required."""
     query = ""
     if request.method == "POST":
         try:

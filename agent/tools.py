@@ -321,15 +321,43 @@ def fetch_weather_widget(location: str) -> dict[str, Any]:
         model = os.getenv("LITELLM_MODEL", "gemini-2.5-flash").replace("gemini/", "")
 
         prompt = f"""What is the current weather in {location} right now? Use web search.
-Return ONLY valid JSON, no markdown:
+For coastal/beach locations, also include tide times (high and low) for today.
+Return ONLY valid JSON, no markdown. Include all fields you can find:
 {{
   "location": "{location}",
   "temp_f": number (current temp in Fahrenheit),
+  "high_f": number (today high) or null,
+  "low_f": number (today low) or null,
+  "feels_like_f": number (feels like temp) or null,
   "condition": "string (e.g. Partly Cloudy, Rain)",
-  "forecast": "string (1-2 sentence outlook)",
+  "forecast": "string (1-2 sentence outlook for today/tomorrow)",
   "humidity": "string (e.g. 65%) or null",
-  "alerts": ["any active weather alerts"] or [],
-  "summary": "string (1 sentence viewer-friendly summary)"
+  "wind_speed": "string (e.g. 9 mph) or null",
+  "wind_gust": "string (e.g. 25 mph) or null",
+  "wind_direction": "string (e.g. W, from the west) or null",
+  "wind_degrees": number (0-360, direction wind is FROM, e.g. 270 for west) or null,
+  "precipitation_today": "string (e.g. 0 in) or null",
+  "precipitation_tomorrow": "string (e.g. 0.55 in) or null",
+  "uv_index": number (0-11) or null,
+  "visibility": "string (e.g. 11 miles) or null",
+  "air_quality": number (AQI 0-500) or null,
+  "sunrise": "string (e.g. 6:59 AM) or null",
+  "sunset": "string (e.g. 7:08 PM) or null",
+  "alerts": ["alert text with time and source (e.g. Winter Weather Advisory until 8 AM EDT Fri)"] or [],
+  "summary": "string (1 sentence viewer-friendly summary)",
+  "feels_like_note": "string (e.g. Wind is making it feel colder) or null",
+  "dew_point": "string (e.g. 25°F) or null",
+  "pressure": "string (e.g. 30.09 inHg) or null",
+  "pressure_trend": "string (Low, Normal, High) or null",
+  "moon_phase": "string (e.g. Waxing Crescent) or null",
+  "moon_illumination": number (0-100) or null,
+  "moon_next_full": "string (e.g. 5 days until full moon) or null",
+  "high_avg_f": number (average high for date) or null,
+  "low_avg_f": number (average low for date) or null,
+  "visibility_note": "string (e.g. Perfectly clear view) or null",
+  "hourly": [{{"hour": "e.g. 2 PM", "temp_f": number, "condition": "string", "icon": "emoji e.g. ☀️"}}] or [],
+  "daily": [{{"day": "e.g. Fri", "low_f": number, "high_f": number, "condition": "string", "icon": "emoji"}}] or [],
+  "tides": [{{"time": "e.g. 6:24 AM", "type": "high" or "low", "height_ft": "e.g. 5.2 ft"}}] or []
 }}"""
 
         response = client.models.generate_content(
@@ -968,6 +996,7 @@ Use the supplied evidence to answer clearly and concisely.
 
 Rules:
 - Prioritize the most relevant evidence for the question.
+- Do NOT repeat the channel/station name (e.g. "NewsChannel 13 - WNYT") in primary_answer — it is already visible in the UI. Describe the program or content instead.
 - If evidence is partial, make a careful best-effort inference.
 - Never say the context is missing if useful evidence exists.
 - If uncertain, use phrases like "it looks like" or "this appears to be".
@@ -1161,7 +1190,7 @@ def moments_respond(req: dict[str, Any]) -> str:
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         logger.warning("GEMINI_API_KEY not set for moments_respond")
-        fallback_msg = f"You're watching {player.get('channel_name') or channel_id}. (Set GEMINI_API_KEY for full answers.)"
+        fallback_msg = "Set GEMINI_API_KEY for full answers."
         return json.dumps({
             "moment": "KNOW",
             "moment_confidence": 0.5,
@@ -1312,7 +1341,7 @@ def moments_respond(req: dict[str, Any]) -> str:
         })
     except Exception as e:
         logger.warning(f"moments_respond failed: {e}", exc_info=True)
-        err_msg = f"You're watching {player.get('channel_name') or channel_id}. (Error: {str(e)[:80]})"
+        err_msg = f"Error: {str(e)[:80]}"
         return json.dumps({
             "moment": "KNOW",
             "moment_confidence": 0.5,
