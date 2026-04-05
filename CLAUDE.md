@@ -17,3 +17,11 @@ A2UI catalog, A2A agent backend, and STIRR component spec. Agent-generated UI fo
 - Python 3.13+, uv
 - `GEMINI_API_KEY` required
 - Tools: search_content (VODLIX API: v2/search, v2/videos/list)
+
+## Environment Variables
+
+- **Never hardcode credentials** — use `from stirr_config import config`
+- **Never commit `.env`** — only `.env.example`
+- Call `config.require("var1", "var2")` at script top to fail fast on missing vars
+- When adding a new var: update `.env.example` and `stirr_config.py`
+- Full reference: `stirr-control/docs/ENV-MANAGEMENT.md`
