@@ -1,8 +1,19 @@
 <!DOCTYPE html>
+<!--
+  Historical diagnostic (April 2026): check whether any video/network pattern works
+  inside a Claude Cowork HTML artifact (sandboxed iframe). Result: MP4, fetch(),
+  HLS.js, localhost iframe, and tunnel fetch were all blocked — see github-issue.md
+  for the feature request filed with Anthropic.
+
+  The trycloudflare URL below was a short-lived dev tunnel; it will not work now.
+  Keep this file as evidence of what was tested, or open it outside Cowork in a
+  normal browser if you want to experiment with the patterns.
+-->
 <html>
 <head><style>body{background:#111;color:#fff;font-family:system-ui;padding:20px}video{width:100%;border-radius:12px}h2{margin-bottom:12px}.status{margin-top:8px;font-size:13px;color:#888}</style></head>
 <body>
 <h2>Video Playback Test</h2>
+<p style="color:#888;font-size:13px;max-width:42rem">Cowork artifact sandbox diagnostic — blocked in-app; context in <code>github-issue.md</code>.</p>
 
 <h3>Test 1: MP4</h3>
 <video id="v1" controls playsinline autoplay muted src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"></video>

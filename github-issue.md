@@ -12,6 +12,8 @@ We built a fully functional Cowork plugin ([STIRR Discover](https://github.com/t
 
 ## Systematic Test Results
 
+Repro HTML for several of these checks lives in this repo as `video-test.html` (artifact sandbox diagnostic; the Cloudflare tunnel URL in that file was ephemeral).
+
 | Test | Result | Error |
 |------|--------|-------|
 | MP4 `<video src="...">` | **Blocked** | `Media load rejected by URL safety check` |
