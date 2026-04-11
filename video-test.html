@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head><style>body{background:#111;color:#fff;font-family:system-ui;padding:20px}video{width:100%;border-radius:12px}h2{margin-bottom:12px}.status{margin-top:8px;font-size:13px;color:#888}</style></head>
+<body>
+<h2>Video Playback Test</h2>
+
+<h3>Test 1: MP4</h3>
+<video id="v1" controls playsinline autoplay muted src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"></video>
+<div class="status" id="s1">Loading MP4...</div>
+
+<h3 style="margin-top:20px">Test 2: Fetch to tunnel</h3>
+<div class="status" id="s2">Testing fetch...</div>
+
+<h3 style="margin-top:20px">Test 3: HLS via proxy</h3>
+<video id="v3" controls playsinline></video>
+<div class="status" id="s3">Waiting...</div>
+
+<script>
+// Test 1: MP4 status
+var v1 = document.getElementById("v1");
+v1.onloadeddata = function() { document.getElementById("s1").textContent = "MP4 playing!"; };
+v1.onerror = function() { document.getElementById("s1").textContent = "MP4 failed: " + (v1.error ? v1.error.message : "unknown"); };
+
+// Test 2: Can we fetch the tunnel at all?
+fetch("https://fcc-visits-webshots-atom.trycloudflare.com/")
+  .then(function(r) { return r.json(); })
+  .then(function(d) { document.getElementById("s2").textContent = "Fetch OK: " + JSON.stringify(d); })
+  .catch(function(e) { document.getElementById("s2").textContent = "Fetch BLOCKED: " + e.message; });
+
+// Test 3: HLS only if fetch works
+setTimeout(function() {
+  if (typeof Hls === "undefined") {
+    document.getElementById("s3").textContent = "HLS.js did not load";
+    return;
+  }
+  document.getElementById("s3").textContent = "HLS.js loaded, attempting proxy stream...";
+  var proxy = "https://fcc-visits-webshots-atom.trycloudflare.com/hls-proxy";
+  var stream = "https://vs-hls-push-ww-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_news_channel_hd/mobile_wifi_main_sd_abr_v2.m3u8";
+  var v3 = document.getElementById("v3");
+  var hls = new Hls({ enableWorker: false });
+  hls.loadSource(proxy + "?url=" + encodeURIComponent(stream));
+  hls.attachMedia(v3);
+  hls.on(Hls.Events.MANIFEST_PARSED, function() {
+    document.getElementById("s3").textContent = "HLS PLAYING!";
+    v3.play().catch(function(){});
+  });
+  hls.on(Hls.Events.ERROR, function(e, d) {
+    document.getElementById("s3").textContent = "HLS error: " + d.type + " / " + d.details + (d.response ? " (HTTP " + d.response.code + ")" : "");
+  });
+}, 2000);
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.7/hls.min.js"></script>
+</body>
+</html>

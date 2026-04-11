@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STIRR Discover</title>
+<style>
+  :root {
+    --stirr-red: #E8392A;
+    --stirr-yellow: #ffda3a;
+    --bg-dark: #0d0d1a;
+    --card-bg: #1a1a2e;
+    --card-hover: #252545;
+    --text-primary: #ffffff;
+    --text-secondary: #a0a0b0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg-dark); color: var(--text-primary); font-family: system-ui, -apple-system, sans-serif; padding: 20px; min-height: 100vh; }
+
+  .header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+  .header-logo { background: var(--stirr-red); color: #fff; font-weight: 900; font-size: 22px; padding: 8px 18px; border-radius: 10px; letter-spacing: 1.5px; box-shadow: 0 2px 12px rgba(232,57,42,0.4); }
+  .header-title { font-size: 20px; font-weight: 700; }
+  .header-sub { font-size: 12px; color: var(--text-secondary); }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .tab { background: var(--card-bg); color: var(--text-primary); border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: background 0.2s; }
+  .tab.active { background: var(--stirr-red); }
+  .tab:hover:not(.active) { background: var(--card-hover); }
+
+  .subtitle { color: var(--text-secondary); font-size: 13px; margin-bottom: 14px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+
+  .card { background: var(--card-bg); border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.2s ease; border: 1px solid transparent; }
+  .card:hover { background: var(--card-hover); transform: scale(1.02); box-shadow: 0 4px 20px rgba(232,57,42,0.13); border-color: rgba(232,57,42,0.27); }
+
+  .card-top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .card-icon { width: 44px; height: 44px; border-radius: 10px; background: #2a2a4a; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; font-weight: 800; color: var(--stirr-red); }
+  .card-icon.news { background: #1a2a3a; color: #4a9eff; }
+  .card-icon.global { background: #1a2a2a; color: #4aefaa; }
+  .card-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .card-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px; }
+  .card-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { background: #2a2a4a; color: var(--text-secondary); font-size: 11px; padding: 3px 8px; border-radius: 6px; text-transform: capitalize; }
+
+  .live-badge { display: inline-flex; align-items: center; gap: 5px; background: var(--stirr-red); color: #fff; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: pulse 1.5s ease-in-out infinite; }
+
+  .back-btn { background: none; border: 1px solid rgba(160,160,176,0.27); color: var(--text-primary); padding: 8px 16px; border-radius: 8px; cursor: pointer; margin-bottom: 16px; font-size: 13px; display: flex; align-items: center; gap: 6px; transition: border-color 0.2s; }
+  .back-btn:hover { border-color: var(--text-secondary); }
+
+  .player-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .player-title { font-size: 22px; font-weight: 700; }
+  .player-desc { color: var(--text-secondary); font-size: 14px; margin-top: 12px; line-height: 1.5; }
+
+  .video-wrap { position: relative; border-radius: 12px; overflow: hidden; background: #000; min-height: 280px; display: flex; align-items: center; justify-content: center; }
+  .sandbox-msg { text-align: center; padding: 40px 24px; }
+  .play-btn { display: inline-block; background: var(--stirr-red); color: #fff; font-weight: 700; padding: 14px 32px; border-radius: 10px; text-decoration: none; font-size: 16px; margin-bottom: 12px; transition: background 0.2s; }
+  .play-btn:hover { background: #c4291d; }
+  .stream-link { color: var(--text-secondary); font-size: 12px; margin-top: 12px; display: inline-block; }
+
+  .note { margin-top: 16px; padding: 14px; background: var(--card-bg); border-radius: 10px; border-left: 3px solid var(--stirr-red); font-size: 13px; color: var(--text-secondary); }
+  .note strong { color: var(--stirr-red); }
+
+  .footer { margin-top: 24px; padding: 16px; background: var(--card-bg); border-radius: 12px; border-left: 3px solid var(--stirr-yellow); font-size: 13px; color: var(--text-secondary); }
+  .footer strong { color: var(--stirr-red); }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">STIRR</div>
+  <div>
+    <div class="header-title">Discover</div>
+    <div class="header-sub">Live news from around the world</div>
+  </div>
+</div>
+
+<div id="tabs-container" class="tabs"></div>
+<div id="subtitle" class="subtitle"></div>
+<div id="content"></div>
+<div id="footer-container"></div>
+
+<script>
+var GLOBAL_NEWS = [
+  { name: "ABC News Live", country: "US", icon: "A", iconClass: "global", categories: ["news"], stream: "https://abc-iview-nw.akamaized.net/hls/live/2006841/abc-iview/master.m3u8", description: "24/7 live news coverage from ABC News" },
+  { name: "CBS News 24/7", country: "US", icon: "C", iconClass: "global", categories: ["news"], stream: "https://cbsn-us.cbsnstream.cbsnews.com/out/v1/55a8648e8f134e82a470f83d562deeca/master.m3u8", description: "Around-the-clock news from CBS" },
+  { name: "CGTN", country: "CN", icon: "C", iconClass: "global", categories: ["news"], stream: "https://news.cgtn.com/resource/live/english/cgtn-news.m3u8", description: "China Global Television Network \u2014 international news" },
+  { name: "DW News", country: "DE", icon: "D", iconClass: "global", categories: ["news"], stream: "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8", description: "Deutsche Welle \u2014 Germany's international broadcaster" },
+  { name: "France 24 English", country: "FR", icon: "F", iconClass: "global", categories: ["news"], stream: "https://stream.france24.com/live/hls/f24_en.m3u8", description: "International news from France \u2014 English language" },
+  { name: "NHK World", country: "JP", icon: "N", iconClass: "global", categories: ["news"], stream: "https://nhkworld.webcdn.stream.ne.jp/www11/nhkworld-tv/domestic/263942/live.m3u8", description: "Japan's international broadcasting \u2014 English" },
+  { name: "Al Jazeera English", country: "QA", icon: "A", iconClass: "global", categories: ["news"], stream: "https://live-hls-web-aje.getaj.net/AJE/index.m3u8", description: "Al Jazeera's English-language 24-hour news channel" },
+  { name: "Euronews", country: "FR", icon: "E", iconClass: "global", categories: ["news"], stream: "https://rakuten-euronews-english.amagi.tv/playlist.m3u8", description: "European and world news from multiple perspectives" },
+];
+
+var BBC_CHANNELS = [
+  { name: "BBC News", country: "GB", icon: "BN", iconClass: "news", categories: ["news"], stream: "https://vs-hls-push-ww-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_news_channel_hd/mobile_wifi_main_sd_abr_v2.m3u8", description: "BBC News \u2014 24-hour breaking news and analysis" },
+  { name: "BBC One", country: "GB", icon: "B1", iconClass: "", categories: ["general"], stream: "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_one_hd/pc_hd_abr_v2.m3u8", description: "BBC's flagship channel \u2014 drama, entertainment, news" },
+  { name: "BBC Two", country: "GB", icon: "B2", iconClass: "", categories: ["general"], stream: "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_two_hd/pc_hd_abr_v2.m3u8", description: "BBC Two \u2014 documentaries, culture, comedy" },
+  { name: "BBC Four", country: "GB", icon: "B4", iconClass: "", categories: ["general"], stream: "https://vs-hls-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_four_hd/mobile_wifi_main_hd_abr_v2.m3u8", description: "BBC Four \u2014 arts, music, documentaries, international film" },
+  { name: "BBC Arabic", country: "GB", icon: "BA", iconClass: "news", categories: ["news"], stream: "https://vs-hls-pushb-ww-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_arabic_tv/mobile_wifi_main_hd_abr_v2.m3u8", description: "BBC Arabic Television \u2014 news for the Middle East & North Africa" },
+  { name: "BBC Persian", country: "GB", icon: "BP", iconClass: "news", categories: ["news"], stream: "https://vs-hls-pushb-ww-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_persian_tv/mobile_wifi_main_hd_abr_v2.m3u8", description: "BBC Persian \u2014 Farsi-language news from the BBC" },
+  { name: "BBC Food", country: "GB", icon: "BF", iconClass: "", categories: ["lifestyle"], stream: "https://d1e9r0b71zfwk7.cloudfront.net/playlist.m3u8", description: "BBC Food \u2014 recipes, cooking shows, food culture" },
+  { name: "BBC Home & Garden", country: "GB", icon: "BH", iconClass: "", categories: ["lifestyle"], stream: "https://d11r33s5i066xh.cloudfront.net/playlist.m3u8", description: "BBC Home & Garden \u2014 interiors, gardening, DIY" },
+  { name: "BBC Kids", country: "GB", icon: "BK", iconClass: "", categories: ["kids"], stream: "https://dmr1h4skdal9h.cloudfront.net/playlist.m3u8", description: "BBC Kids \u2014 children's programming from the BBC" },
+  { name: "BBC News HD", country: "GB", icon: "HD", iconClass: "news", categories: ["news"], stream: "https://vs-hls-push-ww-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_news_channel_hd/mobile_wifi_main_hd_abr_v2.m3u8", description: "BBC News in HD \u2014 720p live stream" },
+];
+
+var STIRR_STATIONS = [
+  { name: "KOMO", callSign: "KOMO", market: "Seattle, WA", dma: "Seattle-Tacoma", group: "Sinclair", icon: "KO", iconClass: "news", categories: ["news","local"], stream: "https://amg01058-amg01058c5-stirr-us-10184.playouts.now.amagi.tv/playlistR720p.m3u8", description: "ABC affiliate \u2014 Seattle news, weather, traffic" },
+  { name: "WJLA", callSign: "WJLA", market: "Washington, D.C.", dma: "Washington DC", group: "Sinclair", icon: "WJ", iconClass: "news", categories: ["news","local"], stream: "https://amg01066-amg01066c5-stirr-us-10184.playouts.now.amagi.tv/playlistR720p.m3u8", description: "ABC affiliate \u2014 DC metro news coverage" },
+  { name: "WNYT", callSign: "WNYT", market: "Albany, NY", dma: "Albany", group: "Hubbard", icon: "WN", iconClass: "news", categories: ["news","local"], stream: "https://amg01942-amg01942c5-stirr-us-10184.playouts.now.amagi.tv/playlistR720p.m3u8", description: "NBC affiliate \u2014 Capital Region news" },
+  { name: "KSTP", callSign: "KSTP", market: "Minneapolis, MN", dma: "Minneapolis-St Paul", group: "Hubbard", icon: "KS", iconClass: "news", categories: ["news","local"], stream: "https://amg01070-amg01070c5-stirr-us-10184.playouts.now.amagi.tv/playlistR720p.m3u8", description: "ABC affiliate \u2014 Twin Cities news" },
+  { name: "KSAT", callSign: "KSAT", market: "San Antonio, TX", dma: "San Antonio", group: "Graham", icon: "KA", iconClass: "news", categories: ["news","local"], stream: "https://amg01060-amg01060c5-stirr-us-10184.playouts.now.amagi.tv/playlistR720p.m3u8", description: "ABC affiliate \u2014 San Antonio news" },
+  { name: "WBFF", callSign: "WBFF", market: "Baltimore, MD", dma: "Baltimore", group: "Sinclair", icon: "WB", iconClass: "news", categories: ["news","local"], stream: "https://amg01054-amg01054c5-stirr-us-10184.playouts.now.amagi.tv/playlistR720p.m3u8", description: "FOX 45 \u2014 Baltimore news and sports" },
+];
+
+var TABS = [
+  { key: "global", label: "Global News Channels", channels: GLOBAL_NEWS, sub: "Live international news \u00b7 Click any channel to play" },
+  { key: "bbc", label: "BBC Channels", channels: BBC_CHANNELS, sub: "Live BBC streams from stirr-iptv-feeds \u00b7 Click any channel to play" },
+  { key: "local", label: "STIRR Local Stations", channels: STIRR_STATIONS, sub: "STIRR local news via Amagi HLS \u00b7 Click any station to play" },
+];
+
+var currentTab = "global";
+var currentPlayer = null; // { tabKey, index } or null
+
+function liveBadgeHtml() {
+  return '<span class="live-badge"><span class="live-dot"></span>Live</span>';
+}
+
+function getTab() {
+  for (var i = 0; i < TABS.length; i++) { if (TABS[i].key === currentTab) return TABS[i]; }
+  return TABS[0];
+}
+
+function renderTabs() {
+  document.getElementById("tabs-container").innerHTML = TABS.map(function(t) {
+    return '<button class="tab ' + (currentTab === t.key ? 'active' : '') + '" onclick="switchTab(\'' + t.key + '\')">' + t.label + '</button>';
+  }).join("");
+}
+
+function switchTab(key) {
+  currentTab = key;
+  currentPlayer = null;
+  renderTabs();
+  renderContent();
+}
+
+function renderContent() {
+  if (currentPlayer) {
+    renderPlayer();
+  } else {
+    renderGrid();
+  }
+}
+
+function renderGrid() {
+  var tab = getTab();
+  var channels = tab.channels;
+  document.getElementById("subtitle").textContent = tab.sub;
+
+  var html = '<div class="grid">';
+  for (var i = 0; i < channels.length; i++) {
+    var ch = channels[i];
+    var displayName = ch.callSign ? ch.callSign + ' \u2014 ' + ch.market : ch.name;
+    var meta = ch.callSign ? ch.dma + ' \u00b7 ' + ch.group : ch.country;
+    var iconClass = ch.iconClass || '';
+
+    html += '<div class="card" onclick="playChannel(' + i + ')">' +
+      '<div class="card-top">' +
+      '<div class="card-icon ' + iconClass + '">' + ch.icon + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+      '<div class="card-name">' + displayName + '</div>' +
+      '<div class="card-meta">' + meta + '</div>' +
+      '</div>' +
+      liveBadgeHtml() +
+      '</div>' +
+      '<div class="card-desc">' + ch.description + '</div>' +
+      '<div class="card-tags">' + ch.categories.map(function(c){ return '<span class="tag">' + c + '</span>'; }).join('') + '</div>' +
+      '</div>';
+  }
+  html += '</div>';
+  document.getElementById("content").innerHTML = html;
+
+  var total = GLOBAL_NEWS.length + BBC_CHANNELS.length + STIRR_STATIONS.length;
+  document.getElementById("footer-container").innerHTML =
+    '<div class="footer">Powered by <strong>STIRR</strong> + iptv-org community database \u00b7 ' + total + ' channels across ' + TABS.length + ' sources</div>';
+}
+
+function playChannel(index) {
+  currentPlayer = { tabKey: currentTab, index: index };
+  renderTabs();
+  renderContent();
+}
+
+function renderPlayer() {
+  var tab = getTab();
+  var ch = tab.channels[currentPlayer.index];
+  if (!ch) { currentPlayer = null; renderGrid(); return; }
+
+  var title = ch.callSign ? ch.callSign + ' \u2014 ' + ch.market : ch.name;
+
+  document.getElementById("subtitle").textContent = "";
+  document.getElementById("footer-container").innerHTML = "";
+  document.getElementById("content").innerHTML =
+    '<button class="back-btn" onclick="currentPlayer=null;renderContent()"><span style="font-size:16px">&#8592;</span> Back to channels</button>' +
+    '<div class="player-header">' +
+    '<span class="player-title">' + title + '</span> ' +
+    liveBadgeHtml() +
+    '</div>' +
+    '<div class="video-wrap">' +
+    '<div class="sandbox-msg">' +
+    '<div style="font-size:48px;margin-bottom:24px">&#9654;</div>' +
+    '<a href="vlc://' + ch.stream + '" class="play-btn">Play in VLC</a>' +
+    '<br><a href="' + ch.stream + '" class="stream-link">or open stream directly</a>' +
+    '</div>' +
+    '</div>' +
+    '<p class="player-desc">' + ch.description + '</p>' +
+    '<div class="note">' +
+    '<strong>Why VLC?</strong> Cowork\u2019s artifact sandbox blocks inline video playback. We\u2019re working with Anthropic to enable native streaming \u2014 when they do, this plays inline automatically.' +
+    '</div>';
+}
+
+renderTabs();
+renderContent();
+</script>
+</body>
+</html>
